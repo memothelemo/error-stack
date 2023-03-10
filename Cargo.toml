@@ -1,0 +1,42 @@
+[workspace]
+members = [".", "macros"]
+default-members = ["."]
+exclude = ["package.json"]
+
+[package]
+name = "error-stack"
+version = "0.3.1"
+authors = ["HASH", "memothelemo <memothelemo@protonmail.com>"]
+edition = "2021"
+rust-version = "1.63.0"
+license = "MIT OR Apache-2.0"
+description = "Modified version of error-stack with similar design of anyhow"
+documentation = "https://docs.rs/error-stack"
+readme = "README.md"
+repository = "https://github.com/hashintel/hash/tree/main/libs/error-stack"
+keywords = ["error", "errorstack", "error-handling", "report", "no_std"]
+categories = ["rust-patterns", "no-std"]
+
+[dependencies]
+tracing-error = { version = "0.2", optional = true, default_features = false }
+anyhow = { version = "1.0.69", default-features = false, optional = true }
+eyre = { version = "0.6", default-features = false, optional = true }
+serde = { version = "1", default-features = false, optional = true }
+spin = { version = "0.9", default-features = false, optional = true, features = ['rwlock', 'once'] }
+
+[build-dependencies]
+rustc_version = "0.4"
+
+[features]
+default = ["std"]
+
+spantrace = ["dep:tracing-error", "std"]
+std = ["anyhow?/std"]
+eyre = ["dep:eyre", "std"]
+serde = ["dep:serde"]
+hooks = ['dep:spin']
+
+[package.metadata.docs.rs]
+all-features = true
+cargo-args = ["-Z", "unstable-options", "-Z", "rustdoc-scrape-examples"]
+targets = ["x86_64-unknown-linux-gnu"]
