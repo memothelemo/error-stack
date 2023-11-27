@@ -31,7 +31,7 @@ pub mod __private {
                 Reporter
             }
         }
-        impl ReportTag for Report {}
+        impl<T> ReportTag for Report<T> {}
 
         pub trait ContextTag {
             #[inline]
@@ -45,7 +45,7 @@ pub mod __private {
         pub struct Reporter;
         impl Reporter {
             #[inline]
-            pub const fn report<T>(self, report: Report) -> Report {
+            pub const fn report<T>(self, report: Report<T>) -> Report<T> {
                 report
             }
         }
@@ -54,7 +54,7 @@ pub mod __private {
         impl ContextReporter {
             #[inline]
             #[track_caller]
-            pub fn report<C: Context>(self, context: C) -> Report {
+            pub fn report<C: Context>(self, context: C) -> Report<C> {
                 Report::new(context)
             }
         }

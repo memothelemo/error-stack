@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 #[cfg(nightly)]
 use core::error::Error;
-use core::{fmt, mem, panic::Location};
+use core::{fmt, marker::PhantomData, mem, panic::Location};
 #[cfg(all(rust_1_65, feature = "std"))]
 use std::backtrace::{Backtrace, BacktraceStatus};
 #[cfg(all(not(nightly), feature = "std"))]
@@ -238,7 +238,7 @@ use crate::{
 /// # }
 /// ```
 #[must_use]
-pub struct Report {
+pub struct Report<C = ()> {
     // The vector is boxed as this implies a memory footprint equal to a single pointer size
     // instead of three pointer sizes. Even for small `Result::Ok` variants, the `Result` would
     // still have at least the size of `Report`, even at the happy path. It's unexpected, that
@@ -246,9 +246,10 @@ pub struct Report {
     // a good trade-off.
     #[allow(clippy::box_collection)]
     pub(super) frames: Box<Vec<Frame>>,
+    _context: PhantomData<fn() -> *const C>,
 }
 
-impl Report {
+impl<C> Report<C> {
     /// Creates a new `Report<Context>` from a provided scope.
     ///
     /// If `context` does not provide [`Backtrace`]/[`SpanTrace`] then this attempts to capture
@@ -258,7 +259,7 @@ impl Report {
     /// [`Backtrace` and `SpanTrace` section]: #backtrace-and-spantrace
     #[inline]
     #[track_caller]
-    pub fn new<C>(context: C) -> Self
+    pub fn new(context: C) -> Self
     where
         C: Context,
     {
@@ -296,6 +297,7 @@ impl Report {
         #[allow(unused_mut)]
         let mut report = Self {
             frames: Box::new(vec![frame]),
+            _context: PhantomData,
         };
 
         if let Some(location) = location {
@@ -457,7 +459,7 @@ impl Report {
     ///
     /// Please see the [`Context`] documentation for more information.
     #[track_caller]
-    pub fn change_context<T>(mut self, context: T) -> Report
+    pub fn change_context<T>(mut self, context: T) -> Report<T>
     where
         T: Context,
     {
@@ -469,6 +471,7 @@ impl Report {
         ));
         Report {
             frames: self.frames,
+            _context: PhantomData,
         }
     }
 
@@ -589,6 +592,10 @@ impl Report {
     /// This is one disadvantage of the library in comparison to plain Errors, as in these cases,
     /// all context types are known.
     ///
+    /// # Safety
+    /// This function assumes that `T` generic of the report contains
+    /// a report associated with `T` type argument.
+    /// 
     /// ## Example
     ///
     /// ```rust
@@ -608,55 +615,79 @@ impl Report {
     /// assert_eq!(io_error.kind(), io::ErrorKind::NotFound);
     /// ```
     #[must_use]
-    pub fn current_context(&self) -> &dyn Context {
-        self.as_error()
+    pub unsafe fn current_context(&self) -> &C
+    where
+        C: Send + Sync + 'static,
+    {
+        self.downcast_ref().unwrap_or_else(|| {
+            core::hint::unreachable_unchecked()
+            // // Panics if there isn't an attached context which matches `T`. As it's not possible to
+            // // create a `Report` without a valid context and this method can only be called when `T`
+            // // is a valid context, it's guaranteed that the context is available.
+            // unreachable!(
+            //     "Report does not contain a context. This is considered a bug and should be \
+            //     reported to https://github.com/hashintel/hash/issues/new/choose"
+            // );
+        })
     }
 
     /// Converts this `Report` to an [`Error`].
     #[cfg(any(nightly, feature = "std"))]
     #[must_use]
-    pub fn into_error(self) -> impl Error + Send + Sync + 'static {
+    pub fn into_error(self) -> impl Error + Send + Sync + 'static
+    where
+        C: 'static,
+    {
         crate::error::ReportError::new(self)
     }
 
     /// Returns this `Report` as an [`Error`].
     #[cfg(any(nightly, feature = "std"))]
     #[must_use]
-    pub fn as_error(&self) -> &(impl Error + Send + Sync + 'static) {
+    pub fn as_error(&self) -> &(impl Error + Send + Sync + 'static)
+    where
+        C: 'static,
+    {
         crate::error::ReportError::from_ref(self)
     }
+
+    /// Converts this `Report` into any Report context
+    #[must_use]
+    pub fn as_any(self) -> Report {
+        Report { frames: self.frames, _context: PhantomData }
+    }
 }
 
 #[cfg(any(nightly, feature = "std"))]
-impl From<Report> for Box<dyn Error> {
-    fn from(report: Report) -> Self {
+impl<C: 'static> From<Report<C>> for Box<dyn Error> {
+    fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
 #[cfg(any(nightly, feature = "std"))]
-impl From<Report> for Box<dyn Error + Send> {
-    fn from(report: Report) -> Self {
+impl<C: 'static> From<Report<C>> for Box<dyn Error + Send> {
+    fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
 #[cfg(any(nightly, feature = "std"))]
-impl From<Report> for Box<dyn Error + Sync> {
-    fn from(report: Report) -> Self {
+impl<C: 'static> From<Report<C>> for Box<dyn Error + Sync> {
+    fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
 #[cfg(any(nightly, feature = "std"))]
-impl From<Report> for Box<dyn Error + Send + Sync> {
-    fn from(report: Report) -> Self {
+impl<C: 'static> From<Report<C>> for Box<dyn Error + Send + Sync> {
+    fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
 #[cfg(feature = "std")]
-impl std::process::Termination for Report {
+impl<Context> std::process::Termination for Report<Context> {
     fn report(self) -> ExitCode {
         #[cfg(not(nightly))]
         return ExitCode::FAILURE;
@@ -669,8 +700,8 @@ impl std::process::Termination for Report {
     }
 }
 
-impl FromIterator<Report> for Option<Report> {
-    fn from_iter<T: IntoIterator<Item = Report>>(iter: T) -> Self {
+impl<Context> FromIterator<Report<Context>> for Option<Report<Context>> {
+    fn from_iter<T: IntoIterator<Item = Report<Context>>>(iter: T) -> Self {
         let mut iter = iter.into_iter();
 
         let mut base = iter.next()?;
@@ -682,7 +713,7 @@ impl FromIterator<Report> for Option<Report> {
     }
 }
 
-impl Extend<Self> for Report {
+impl<Context> Extend<Self> for Report<Context> {
     fn extend<T: IntoIterator<Item = Self>>(&mut self, iter: T) {
         for item in iter {
             self.extend_one(item);

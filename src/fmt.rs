@@ -1082,7 +1082,7 @@ fn debug_frame(root: &Frame, prefix: &[&Frame], config: &mut Config) -> Vec<Line
     vec![debug_render(head, contexts, sources)]
 }
 
-impl Debug for Report {
+impl<C> Debug for Report<C> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         let mut config = Config::load(fmt.alternate());
 
@@ -1151,7 +1151,7 @@ impl Debug for Report {
     }
 }
 
-impl Display for Report {
+impl<Context> Display for Report<Context> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         for (index, frame) in self
             .frames()

@@ -101,42 +101,42 @@ implement_future_adaptor!(
     FutureWithAttachment,
     attach,
     Send + Sync + 'static,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, <Fut::Output as ResultExt>::Context>
 );
 
 implement_lazy_future_adaptor!(
     FutureWithLazyAttachment,
     attach_lazy,
     Send + Sync + 'static,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, <Fut::Output as ResultExt>::Context>
 );
 
 implement_future_adaptor!(
     FutureWithPrintableAttachment,
     attach_printable,
     Display + Debug + Send + Sync + 'static,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, <Fut::Output as ResultExt>::Context>
 );
 
 implement_lazy_future_adaptor!(
     FutureWithLazyPrintableAttachment,
     attach_printable_lazy,
     Display + Debug + Send + Sync + 'static,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, <Fut::Output as ResultExt>::Context>
 );
 
 implement_future_adaptor!(
     FutureWithContext,
     change_context,
     Context,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, T>
 );
 
 implement_lazy_future_adaptor!(
     FutureWithLazyContext,
     change_context_lazy,
     Context,
-    Result<<Fut::Output as ResultExt>::Ok>
+    Result<<Fut::Output as ResultExt>::Ok, T>
 );
 
 /// Extension trait for [`Future`] to provide contextual information on [`Report`]s.

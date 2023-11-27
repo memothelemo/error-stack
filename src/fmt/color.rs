@@ -60,7 +60,7 @@ impl AtomicPreference for ColorMode {
 
 static COLOR_OVERRIDE: AtomicOverride<ColorMode> = AtomicOverride::new();
 
-impl Report {
+impl Report<()> {
     /// Set the color mode preference
     ///
     /// If no [`ColorMode`] is set, it defaults to [`ColorMode::Emphasis`].

@@ -64,7 +64,7 @@ pub trait Context: fmt::Display + fmt::Debug + Send + Sync + 'static {
     fn provide<'a>(&'a self, request: &mut Request<'a>) {}
 }
 
-impl<C> From<C> for Report
+impl<C> From<C> for Report<C>
 where
     C: Context,
 {

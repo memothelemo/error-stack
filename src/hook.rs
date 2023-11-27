@@ -17,7 +17,7 @@ type RwLock<T> = spin::rwlock::RwLock<T>;
 
 static FMT_HOOK: RwLock<Hooks> = RwLock::new(Hooks { inner: Vec::new() });
 
-impl Report {
+impl Report<()> {
     /// Can be used to globally set a [`Debug`] format hook, for a specific type `T`.
     ///
     /// This hook will be called on every [`Debug`] call, if an attachment with the same type has

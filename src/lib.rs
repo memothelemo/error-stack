@@ -528,13 +528,13 @@ mod tests {
     const fn assert_static<T: 'static>() {}
 
     const fn report() {
-        assert_send::<Report>();
-        assert_sync::<Report>();
-        assert_static::<Report>();
+        assert_send::<Report<()>>();
+        assert_sync::<Report<()>>();
+        assert_static::<Report<()>>();
     }
 
     #[test]
     fn test_size() {
-        assert_eq!(mem::size_of::<Report>(), mem::size_of::<*const ()>());
+        assert_eq!(mem::size_of::<Report<()>>(), mem::size_of::<*const ()>());
     }
 }
