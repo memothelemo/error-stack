@@ -7,7 +7,7 @@ mod common;
 use common::*;
 use error_stack::{AttachmentKind, FrameKind, FutureExt, Report, ResultExt};
 
-fn test_messages(report: &Report) {
+fn test_messages<E>(report: &Report<E>) {
     assert_eq!(
         remove_builtin_messages(messages(report)),
         remove_builtin_messages([
@@ -20,7 +20,7 @@ fn test_messages(report: &Report) {
     );
 }
 
-fn test_kinds(report: &Report) {
+fn test_kinds<E>(report: &Report<E>) {
     assert_kinds!(
         report,
         [

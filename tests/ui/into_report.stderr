@@ -11,8 +11,8 @@ error[E0599]: the method `into_report` exists for enum `Result<(), Report<RootEr
    |
   ::: src/report.rs
    |
-   | pub struct Report<C> {
-   | -------------------- doesn't satisfy `_: From<Report<RootError>>`
+   | pub struct Report<C = ()> {
+   | ------------------------- doesn't satisfy `_: From<Report<RootError>>`
    |
    = note: the following trait bounds were not satisfied:
            `error_stack::Report<error_stack::Report<RootError>>: From<error_stack::Report<RootError>>`

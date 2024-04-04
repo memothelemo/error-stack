@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use error_stack::{Context, Report, Result, ResultExt};
+use error_stack::{AnyResultExt, Context, Report, Result, ResultExt};
 
 #[derive(Debug)]
 struct ParseExperimentError;
@@ -50,7 +50,8 @@ fn parse_experiment(description: &str) -> Result<Vec<(u64, u64)>> {
                 Err(accum)
             }
         })
-        .change_context(ParseExperimentError)?;
+        .change_context(ParseExperimentError)
+        .as_any_report()?;
 
     Ok(values)
 }
@@ -75,10 +76,13 @@ fn start_experiments(
     let experiments = experiment_ids
         .iter()
         .map(|exp_id| {
-            let description = experiment_descriptions.get(*exp_id).ok_or_else(|| {
-                Report::new(ExperimentError)
-                    .attach_printable(format!("experiment {exp_id} has no valid description"))
-            })?;
+            let description = experiment_descriptions
+                .get(*exp_id)
+                .ok_or_else(|| {
+                    Report::new(ExperimentError)
+                        .attach_printable(format!("experiment {exp_id} has no valid description"))
+                })
+                .as_any_report()?;
 
             let experiments = parse_experiment(description)
                 .attach_printable(format!("experiment {exp_id} could not be parsed"))
@@ -91,23 +95,20 @@ fn start_experiments(
 
             Ok(experiments)
         })
-        .fold(
-            Ok(vec![]),
-            |accum: Result<_>, value| match (accum, value) {
-                (Ok(mut accum), Ok(value)) => {
-                    accum.extend(value);
+        .fold(Ok(vec![]), |accum: Result<_>, value| match (accum, value) {
+            (Ok(mut accum), Ok(value)) => {
+                accum.extend(value);
 
-                    Ok(accum)
-                }
-                (Ok(_), Err(err)) => Err(err),
-                (Err(accum), Ok(_)) => Err(accum),
-                (Err(mut accum), Err(err)) => {
-                    accum.extend_one(err);
+                Ok(accum)
+            }
+            (Ok(_), Err(err)) => Err(err),
+            (Err(accum), Ok(_)) => Err(accum),
+            (Err(mut accum), Err(err)) => {
+                accum.extend_one(err);
 
-                    Err(accum)
-                }
-            },
-        )
+                Err(accum)
+            }
+        })
         .attach_printable("unable to set up experiments")?;
 
     Ok(experiments.iter().map(|experiment| experiment()).collect())

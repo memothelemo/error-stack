@@ -1,3 +1,4 @@
+#[cfg_attr(feature = "std", allow(unused_imports))]
 use alloc::{boxed::Box, vec, vec::Vec};
 #[cfg(nightly)]
 use core::error::Error;
@@ -170,7 +171,7 @@ use crate::{
 ///     #     let value = backtrace.replace_all(&value, "backtrace no. $1\n  [redacted]");
 ///     #     let value = backtrace_info.replace_all(value.as_ref(), "backtrace ($3)");
 ///     #
-///     #     ansi_to_html::convert_escaped(value.as_ref()).unwrap()
+///     #     ansi_to_html::convert(value.as_ref()).unwrap()
 ///     # }
 ///     # #[cfg(nightly)]
 ///     # expect_test::expect_file![concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots/doc/report_display__doc.snap")].assert_eq(&render(format!("{report}")));
@@ -595,7 +596,7 @@ impl<C> Report<C> {
     /// # Safety
     /// This function assumes that `T` generic of the report contains
     /// a report associated with `T` type argument.
-    /// 
+    ///
     /// ## Example
     ///
     /// ```rust
@@ -654,7 +655,35 @@ impl<C> Report<C> {
     /// Converts this `Report` into any Report context
     #[must_use]
     pub fn as_any(self) -> Report {
-        Report { frames: self.frames, _context: PhantomData }
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+}
+
+impl Report {
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack.
+    ///
+    /// It has the same behavior as [`Report::change_context`] but it does
+    /// not change the type of the `Report`.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[track_caller]
+    pub fn change_context_slient<T>(mut self, context: T) -> Report
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
+        self.frames.push(Frame::from_attachment(
+            *Location::caller(),
+            context_frame.into_boxed_slice(),
+        ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
     }
 }
 

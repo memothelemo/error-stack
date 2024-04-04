@@ -2,7 +2,7 @@
 //!
 //! [![crates.io](https://img.shields.io/crates/v/error-stack)][crates.io]
 //! [![libs.rs](https://img.shields.io/badge/libs.rs-error--stack-orange)][libs.rs]
-//! [![rust-version](https://img.shields.io/static/v1?label=Rust&message=1.63.0/nightly-2023-10-30&color=blue)][rust-version]
+//! [![rust-version](https://img.shields.io/static/v1?label=Rust&message=1.63.0/nightly-2024-04-01&color=blue)][rust-version]
 //! [![discord](https://img.shields.io/discord/840573247803097118)][discord]
 //!
 //! [crates.io]: https://crates.io/crates/error-stack
@@ -78,10 +78,10 @@
 //! variant and can be used as a return type:
 //!
 //! ```rust
-//! # fn has_permission(_: usize, _: usize) -> bool { true }
-//! # fn get_user() -> Result<usize, AccessError> { Ok(0) }
-//! # fn get_resource() -> Result<usize, AccessError> { Ok(0) }
-//! # #[derive(Debug)] enum AccessError { PermissionDenied(usize, usize) }
+//! # fn has_permission(_: (), _: ()) -> bool { true }
+//! # fn get_user() -> Result<(), AccessError> { Ok(()) }
+//! # fn get_resource() -> Result<(), AccessError> { Ok(()) }
+//! # #[derive(Debug)] enum AccessError { PermissionDenied((), ()) }
 //! # impl core::fmt::Display for AccessError {
 //! #    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
 //! # }
@@ -226,7 +226,7 @@
 //! #     let value = backtrace.replace_all(&value, "backtrace no. $1\n  [redacted]");
 //! #     let value = backtrace_info.replace_all(value.as_ref(), "backtrace ($3)");
 //! #
-//! #     ansi_to_html::convert_escaped(value.as_ref()).unwrap()
+//! #     ansi_to_html::convert(value.as_ref()).unwrap()
 //! # }
 //! #
 //! # #[cfg(nightly)]
@@ -470,13 +470,18 @@
 //! [`Debug`]: core::fmt::Debug
 //! [`SpanTrace`]: tracing_error::SpanTrace
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(nightly, feature(error_in_core, error_generic_member_access))]
+#![cfg_attr(
+    nightly,
+    feature(error_in_core, error_generic_member_access),
+    allow(clippy::incompatible_msrv)
+)]
 #![cfg_attr(all(doc, nightly), feature(doc_auto_cfg))]
 #![cfg_attr(all(nightly, feature = "std"), feature(backtrace_frames))]
 #![cfg_attr(
     not(miri),
     doc(test(attr(deny(warnings, clippy::pedantic, clippy::nursery))))
 )]
+#![allow(unsafe_code)]
 
 extern crate alloc;
 
@@ -510,12 +515,12 @@ pub use self::{
 #[allow(deprecated)]
 pub use self::{
     future::FutureExt,
-    result::{IntoReport, ResultExt},
+    result::{AnyResultExt, IntoReport, ResultExt},
 };
 
 #[cfg(test)]
+#[allow(dead_code, clippy::extra_unused_type_parameters)]
 mod tests {
-    #![allow(dead_code, clippy::extra_unused_type_parameters)]
 
     use core::mem;
 

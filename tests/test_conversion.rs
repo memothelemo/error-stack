@@ -13,14 +13,18 @@ fn io_error() -> Result<(), io::Error> {
 fn report() {
     let report = io_error().map_err(Report::new).expect_err("not an error");
     assert!(report.contains::<io::Error>());
-    assert_eq!(report.current_context().kind(), io::ErrorKind::Other);
+    unsafe {
+        assert_eq!(report.current_context().kind(), io::ErrorKind::Other);
+    }
 }
 
 #[test]
 fn into_report() {
     let report = io_error().map_err(Report::from).expect_err("not an error");
     assert!(report.contains::<io::Error>());
-    assert_eq!(report.current_context().kind(), io::ErrorKind::Other);
+    unsafe {
+        assert_eq!(report.current_context().kind(), io::ErrorKind::Other);
+    }
 }
 
 fn returning_boxed_error() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
