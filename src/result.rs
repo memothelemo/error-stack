@@ -92,6 +92,24 @@ pub trait AnyResultExt {
     where
         C: Context,
         F: FnOnce() -> C;
+
+    /// Changes the context of the [`Report`] inside the [`Result`].
+    ///
+    /// Unlike [`AnyResultExt::change_context`], it changes from an anonymous [`Report`]
+    /// type to a [`Report`] with a context type.
+    ///
+    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
+    fn transform_context<C>(self, context: C) -> core::result::Result<Self::Ok, Report<C>>
+    where
+        C: Context;
+
+    /// Lazily changes the context of the [`Report`] inside the [`Result`].
+    ///
+    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
+    fn transform_context_lazy<C, F>(self, context: F) -> core::result::Result<Self::Ok, Report<C>>
+    where
+        C: Context,
+        F: FnOnce() -> C;
 }
 
 /// Extension trait for [`Result`][core::result::Result] to provide context information on
@@ -415,6 +433,29 @@ impl<T> AnyResultExt for Result<T> {
         match self {
             Ok(ok) => Ok(ok),
             Err(report) => Err(report.change_context_slient(context())),
+        }
+    }
+
+    #[track_caller]
+    fn transform_context<C>(self, context: C) -> Result<T, C>
+    where
+        C: Context,
+    {
+        match self {
+            Ok(ok) => Ok(ok),
+            Err(report) => Err(report.transform_context(context)),
+        }
+    }
+
+    #[track_caller]
+    fn transform_context_lazy<C, F>(self, context: F) -> Result<T, C>
+    where
+        C: Context,
+        F: FnOnce() -> C,
+    {
+        match self {
+            Ok(ok) => Ok(ok),
+            Err(report) => Err(report.transform_context(context())),
         }
     }
 }
