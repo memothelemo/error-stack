@@ -663,6 +663,29 @@ impl<C> Report<C> {
 }
 
 impl Report {
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack, really
+    /// changing the type of the `Report`.
+    ///
+    /// It changes from an anonymous [`Report`] type to a [`Report`] with a type.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[track_caller]
+    pub fn transform_context<T>(mut self, context: T) -> Report<T>
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
+        self.frames.push(Frame::from_attachment(
+            *Location::caller(),
+            context_frame.into_boxed_slice(),
+        ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+
     /// Add a new [`Context`] object to the top of the [`Frame`] stack.
     ///
     /// It has the same behavior as [`Report::change_context`] but it does
