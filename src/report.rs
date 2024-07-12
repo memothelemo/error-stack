@@ -653,7 +653,6 @@ impl<C> Report<C> {
     }
 
     /// Converts this `Report` into any Report context
-    #[must_use]
     pub fn as_any(self) -> Report {
         Report {
             frames: self.frames,
@@ -693,7 +692,7 @@ impl Report {
     ///
     /// Please see the [`Context`] documentation for more information.
     #[track_caller]
-    pub fn change_context_slient<T>(mut self, context: T) -> Report
+    pub fn change_context_slient<T>(mut self, context: T) -> Self
     where
         T: Context,
     {
@@ -703,7 +702,7 @@ impl Report {
             *Location::caller(),
             context_frame.into_boxed_slice(),
         ));
-        Report {
+        Self {
             frames: self.frames,
             _context: PhantomData,
         }
