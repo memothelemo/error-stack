@@ -41,7 +41,7 @@ use crate::{Context, Report};
 pub type Result<T, C = ()> = core::result::Result<T, Report<C>>;
 
 /// Extension trait for [`Result`][core::result::Result] to provide context information on
-/// [`Report`]s with no explicit type argument (any reports).
+/// [`Report`]s with no explicit type argument (anonymized reports).
 pub trait AnyResultExt {
     /// Type of the [`Ok`] value in the [`Result`]
     type Ok;

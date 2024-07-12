@@ -652,7 +652,7 @@ impl<C> Report<C> {
         crate::error::ReportError::from_ref(self)
     }
 
-    /// Converts this `Report` into any Report context
+    /// Converts this `Report` into anonymized Report
     pub fn as_any(self) -> Report {
         Report {
             frames: self.frames,
