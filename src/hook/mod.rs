@@ -217,8 +217,9 @@ impl Report<()> {
     /// Returns the hook that was previously set by [`install_debug_hook`]
     ///
     /// [`install_debug_hook`]: Self::install_debug_hook
+    #[allow(private_bounds)]
     #[cfg(any(feature = "std", feature = "hooks"))]
-    pub(crate) fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
+    pub fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
         install_builtin_hooks();
 
         // TODO: Use `let ... else` when MSRV is 1.65
