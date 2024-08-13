@@ -3,7 +3,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 #[cfg(nightly)]
 use core::error::Error;
 use core::{fmt, marker::PhantomData, mem, panic::Location};
-#[cfg(all(rust_1_65, feature = "std"))]
+#[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
 use std::backtrace::{Backtrace, BacktraceStatus};
 #[cfg(all(not(nightly), feature = "std"))]
 use std::error::Error;
@@ -277,14 +277,17 @@ impl<C> Report<C> {
         #[cfg(not(nightly))]
         let location = Some(Location::caller());
 
-        #[cfg(all(nightly, feature = "std"))]
+        #[cfg(all(not(feature = "backtrace"), nightly, feature = "std"))]
         let backtrace = core::error::request_ref::<Backtrace>(&frame.as_error())
             .filter(|backtrace| backtrace.status() == BacktraceStatus::Captured)
             .is_none()
             .then(Backtrace::capture);
 
-        #[cfg(all(rust_1_65, not(nightly), feature = "std"))]
-        let backtrace = Some(Backtrace::capture());
+        #[cfg(all(rust_1_65, feature = "backtrace", feature = "std"))]
+        let backtrace = Some(backtrace::Backtrace::new());
+
+        #[cfg(all(rust_1_65, not(nightly), not(feature = "backtrace"), feature = "std"))]
+        let backtrace = Backtrace::capture();
 
         #[cfg(all(nightly, feature = "spantrace"))]
         let span_trace = core::error::request_ref::<SpanTrace>(&frame.as_error())
@@ -305,7 +308,12 @@ impl<C> Report<C> {
             report = report.attach(*location);
         }
 
-        #[cfg(all(rust_1_65, feature = "std"))]
+        #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
+        {
+            report = report.attach(backtrace);
+        }
+
+        #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
         if let Some(backtrace) =
             backtrace.filter(|bt| matches!(bt.status(), BacktraceStatus::Captured))
         {

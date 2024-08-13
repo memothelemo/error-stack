@@ -457,11 +457,13 @@ mod default {
     use alloc::format;
     #[cfg_attr(feature = "std", allow(unused_imports))]
     use alloc::string::ToString;
+    #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
+    use backtrace::Backtrace;
     use core::{
         panic::Location,
         sync::atomic::{AtomicBool, Ordering},
     };
-    #[cfg(all(rust_1_65, feature = "std"))]
+    #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
     use std::backtrace::Backtrace;
     #[cfg(feature = "std")]
     use std::sync::Once;
@@ -518,7 +520,10 @@ mod default {
     fn backtrace(backtrace: &Backtrace, context: &mut HookContext<Backtrace>) {
         let idx = context.increment_counter();
 
+        #[cfg(not(feature = "backtrace"))]
         context.push_appendix(format!("backtrace no. {}\n{backtrace}", idx + 1));
+        #[cfg(feature = "backtrace")]
+        context.push_appendix(format!("backtrace no. {}\n{backtrace:?}", idx + 1));
         #[cfg(nightly)]
         context.push_body(format!(
             "backtrace with {} frames ({})",
