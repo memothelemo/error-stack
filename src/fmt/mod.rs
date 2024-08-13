@@ -315,6 +315,7 @@ use core::{
 
 pub use charset::Charset;
 pub use color::ColorMode;
+pub use config::Config;
 #[cfg(any(feature = "std", feature = "hooks"))]
 pub use hook::HookContext;
 #[cfg(any(feature = "std", feature = "hooks"))]
@@ -323,10 +324,7 @@ pub(crate) use hook::{install_builtin_hooks, Format, Hooks};
 use location::LocationAttachment;
 
 use crate::{
-    fmt::{
-        color::{Color, DisplayStyle, Style},
-        config::Config,
-    },
+    fmt::color::{Color, DisplayStyle, Style},
     AttachmentKind, Context, Frame, FrameKind, Report,
 };
 

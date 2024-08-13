@@ -366,7 +366,7 @@ impl<T> HookContext<T> {
         self.inner().extra().alternate
     }
 
-    pub(crate) fn take_body(&mut self) -> Vec<String> {
+    pub fn take_body(&mut self) -> Vec<String> {
         self.inner_mut().extra_mut().take_body()
     }
 }
@@ -421,7 +421,7 @@ fn into_boxed_hook<T: Send + Sync + 'static>(
 /// [`Display`]: core::fmt::Display
 /// [`Debug`]: core::fmt::Debug
 /// [`.insert()`]: Hooks::insert
-pub(crate) struct Hooks {
+pub struct Hooks {
     // We use `Vec`, instead of `HashMap` or `BTreeMap`, so that ordering is consistent with the
     // insertion order of types.
     pub(crate) inner: Vec<(TypeId, BoxedHook)>,
@@ -440,7 +440,8 @@ impl Hooks {
         self.inner.push((type_id, into_boxed_hook(hook)));
     }
 
-    pub(crate) fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
+    #[allow(unreachable_pub)]
+    pub fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
         let mut hit = false;
 
         for (_, hook) in &self.inner {
