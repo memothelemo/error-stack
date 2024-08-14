@@ -308,12 +308,12 @@ impl<C> Report<C> {
             report = report.attach(*location);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
+        #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
         {
             report = report.attach(backtrace);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
+        #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
         if let Some(backtrace) =
             backtrace.filter(|bt| matches!(bt.status(), BacktraceStatus::Captured))
         {
