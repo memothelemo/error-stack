@@ -3,6 +3,8 @@ pub(crate) mod context;
 #[cfg_attr(feature = "std", allow(unused_imports))]
 use alloc::vec::Vec;
 
+#[cfg(feature = "serde")]
+use crate::serde::{install_builtin_serde_hooks, SerdeHooks, SerializeFn};
 use crate::{
     fmt::{install_builtin_hooks, Hooks},
     Report,
@@ -17,6 +19,8 @@ type RwLock<T> = std::sync::RwLock<T>;
 type RwLock<T> = spin::rwlock::RwLock<T>;
 
 static FMT_HOOK: RwLock<Hooks> = RwLock::new(Hooks { inner: Vec::new() });
+#[cfg(feature = "serde")]
+static SERDE_HOOK: RwLock<SerdeHooks> = RwLock::new(SerdeHooks::new());
 
 impl Report<()> {
     /// Can be used to globally set a [`Debug`] format hook, for a specific type `T`.
@@ -234,6 +238,55 @@ impl Report<()> {
         // The spin RwLock cannot panic
         #[cfg(all(not(feature = "std"), feature = "hooks"))]
         let hook = FMT_HOOK.read();
+
+        closure(&hook)
+    }
+
+    // TODO: upcoming PR will add documentation
+    #[allow(missing_docs)]
+    #[cfg(all(any(feature = "std", feature = "hooks"), feature = "serde"))]
+    pub fn install_serde_hook<T: serde::Serialize + Send + Sync + 'static>() {
+        install_builtin_serde_hooks();
+
+        #[cfg(feature = "std")]
+        let mut lock = SERDE_HOOK.write().expect("should not be poisoned");
+
+        // The spin RwLock cannot panic
+        #[cfg(all(not(feature = "std"), feature = "hooks"))]
+        let mut lock = SERDE_HOOK.write();
+
+        lock.insert_static::<T>();
+    }
+
+    // TODO: upcoming PR will add documentation
+    #[allow(missing_docs)]
+    #[cfg(all(any(feature = "std", feature = "hooks"), feature = "serde"))]
+    pub fn install_custom_serde_hook<T>(closure: impl for<'a> SerializeFn<'a, T>)
+    where
+        T: Send + Sync + 'static,
+    {
+        install_builtin_serde_hooks();
+
+        #[cfg(feature = "std")]
+        let mut lock = SERDE_HOOK.write().expect("should not be poisoned");
+
+        // The spin RwLock cannot panic
+        #[cfg(all(not(feature = "std"), feature = "hooks"))]
+        let mut lock = SERDE_HOOK.write();
+
+        lock.insert_dynamic(closure);
+    }
+
+    #[cfg(all(any(feature = "std", feature = "hooks"), feature = "serde"))]
+    pub fn invoke_serde_hook<T>(closure: impl FnOnce(&SerdeHooks) -> T) -> T {
+        install_builtin_serde_hooks();
+
+        #[cfg(feature = "std")]
+        let hook = SERDE_HOOK.read().expect("should not be poisoned");
+
+        // The spin RwLock cannot panic
+        #[cfg(all(not(feature = "std"), feature = "hooks"))]
+        let hook = SERDE_HOOK.read();
 
         closure(&hook)
     }

@@ -25,8 +25,12 @@ eyre = { version = "0.6", default-features = false, optional = true }
 serde = { version = "1", default-features = false, optional = true }
 spin = { version = "0.9", default-features = false, optional = true, features = ['rwlock', 'once'] }
 
+erased-serde = { version = "0.4.5", optional = true }
+tracing = { version = "0.1", optional = true }
+
 [dev-dependencies]
 serde = { version = "1.0.193", features = ["derive"] }
+serde_test = "1.0.177"
 serde_json = "1.0.108"
 futures = { version = "0.3.29", default-features = false, features = ["executor"] }
 trybuild = "1.0.85"
@@ -48,10 +52,10 @@ rustc_version = "0.4"
 [features]
 default = ["std"]
 
-spantrace = ["dep:tracing-error", "std"]
+spantrace = ["dep:tracing-error", "std", "tracing"]
 std = ["anyhow?/std"]
 eyre = ["dep:eyre", "std"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "dep:erased-serde"]
 hooks = ['dep:spin']
 
 [package.metadata.docs.rs]

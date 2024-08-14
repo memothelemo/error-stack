@@ -500,8 +500,8 @@ mod error;
 pub mod fmt;
 #[cfg(any(feature = "std", feature = "hooks"))]
 mod hook;
-#[cfg(feature = "serde")]
-mod serde;
+#[cfg(all(any(feature = "hooks", feature = "std"), feature = "serde"))]
+pub mod serde;
 
 pub use self::{
     compat::IntoReportCompat,
