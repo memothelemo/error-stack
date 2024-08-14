@@ -367,12 +367,7 @@ mod default {
 
         INSTALL_BUILTIN.call_once(|| {
             INSTALL_BUILTIN_RUNNING.store(true, Ordering::Release);
-
             Report::install_custom_serde_hook(SerializeLocation::hook);
-
-            #[cfg(all(feature = "std", rust_1_65))]
-            Report::install_custom_serde_hook::<Backtrace>(backtrace);
-
             #[cfg(feature = "spantrace")]
             Report::install_custom_serde_hook(SerializeSpantrace::hook);
         });
