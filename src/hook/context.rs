@@ -75,7 +75,7 @@ $vis struct HookContext<T> {
 }
 
 impl HookContext<()> {
-    pub(crate) fn new(extra: $extra) -> Self {
+    pub fn new(extra: $extra) -> Self {
         Self {
             inner: $crate::hook::context::Inner::new(extra),
             _marker: core::marker::PhantomData,
