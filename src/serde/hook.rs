@@ -3,7 +3,14 @@ use core::{any::TypeId, iter::FusedIterator};
 
 use crate::{hook::context::impl_hook_context, Frame};
 
-pub(crate) struct Serde {}
+pub struct Serde {}
+
+impl Serde {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
 // TODO: upcoming PR will add documentation
 impl_hook_context! {
