@@ -16,6 +16,7 @@
 #[cfg(any(feature = "std", feature = "hooks"))]
 mod hook;
 
-pub use hook::SerdeHooks;
+pub use hook::{SerdeHooks, SerializeFn};
+
 #[cfg(any(feature = "std", feature = "hooks"))]
-pub(crate) use hook::{install_builtin_serde_hooks, SerializeFn};
+pub(crate) use hook::install_builtin_serde_hooks;

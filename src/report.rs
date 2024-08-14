@@ -277,16 +277,13 @@ impl<C> Report<C> {
         #[cfg(not(nightly))]
         let location = Some(Location::caller());
 
-        #[cfg(all(not(feature = "backtrace"), nightly, feature = "std"))]
+        #[cfg(all(rust_1_65, nightly, feature = "std"))]
         let backtrace = core::error::request_ref::<Backtrace>(&frame.as_error())
             .filter(|backtrace| backtrace.status() == BacktraceStatus::Captured)
             .is_none()
             .then(Backtrace::capture);
 
-        #[cfg(all(rust_1_65, feature = "backtrace", feature = "std"))]
-        let backtrace = Some(backtrace::Backtrace::new());
-
-        #[cfg(all(rust_1_65, not(nightly), not(feature = "backtrace"), feature = "std"))]
+        #[cfg(all(rust_1_65, not(nightly), feature = "std"))]
         let backtrace = Backtrace::capture();
 
         #[cfg(all(nightly, feature = "spantrace"))]
@@ -308,12 +305,12 @@ impl<C> Report<C> {
             report = report.attach(*location);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
+        #[cfg(all(rust_1_65, not(nightly), feature = "std"))]
         {
             report = report.attach(backtrace);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
+        #[cfg(all(rust_1_65, nightly, feature = "std"))]
         if let Some(backtrace) =
             backtrace.filter(|bt| matches!(bt.status(), BacktraceStatus::Captured))
         {
