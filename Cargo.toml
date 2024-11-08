@@ -50,6 +50,7 @@ rustc_version = "0.4"
 
 [features]
 default = ["std"]
+exclude-location = []
 
 spantrace = ["dep:tracing-error", "std"]
 std = ["anyhow?/std"]

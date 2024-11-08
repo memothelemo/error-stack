@@ -269,11 +269,13 @@ impl<C> Report<C> {
 
     #[track_caller]
     pub(crate) fn from_frame(frame: Frame) -> Self {
+        #[cfg(not(feature = "exclude-location"))]
         #[cfg(nightly)]
         let location = core::error::request_ref::<Location>(&frame.as_error())
             .is_none()
             .then_some(Location::caller());
 
+        #[cfg(not(feature = "exclude-location"))]
         #[cfg(not(nightly))]
         let location = Some(Location::caller());
 
@@ -304,6 +306,7 @@ impl<C> Report<C> {
             _context: PhantomData,
         };
 
+        #[cfg(not(feature = "exclude-location"))]
         if let Some(location) = location {
             report = report.attach(*location);
         }
@@ -402,6 +405,30 @@ impl<C> Report<C> {
         self.frames.append(&mut report.frames);
     }
 
+    /// Adds additional information to the [`Frame`] stack but it will be dumped as the first element.
+    ///
+    /// This behaves like [`attach_printable()`] but will not be shown when printing the [`Report`].
+    /// To benefit from seeing attachments in normal error outputs, use [`attach_printable()`]
+    ///
+    /// **Note:** [`attach_printable()`] will be deprecated when specialization is stabilized and
+    /// it becomes possible to merge these two methods.
+    ///
+    /// [`Display`]: core::fmt::Display
+    /// [`Debug`]: core::fmt::Debug
+    /// [`attach_printable()`]: Self::attach_printable
+    #[track_caller]
+    pub fn attach_as_first<A>(mut self, attachment: A) -> Self
+    where
+        A: Send + Sync + 'static,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        self.frames.insert(
+            0,
+            Frame::from_attachment(attachment, old_frames.into_boxed_slice()),
+        );
+        self
+    }
+
     /// Adds additional information to the [`Frame`] stack.
     ///
     /// This behaves like [`attach_printable()`] but will not be shown when printing the [`Report`].
@@ -490,6 +517,24 @@ impl<C> Report<C> {
             *Location::caller(),
             context_frame.into_boxed_slice(),
         ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack, changing the type of the
+    /// `Report`.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[track_caller]
+    pub fn change_context_no_location<T>(mut self, context: T) -> Report<T>
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = Frame::from_context(context, old_frames.into_boxed_slice());
+        self.frames.push(context_frame);
         Report {
             frames: self.frames,
             _context: PhantomData,
