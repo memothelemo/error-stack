@@ -1,6 +1,6 @@
 #[cfg(nightly)]
 use core::error::{Error, Request};
-use core::fmt;
+use core::{any, fmt};
 #[cfg(all(not(nightly), feature = "std"))]
 use std::error::Error;
 
@@ -57,7 +57,7 @@ use crate::Report;
 /// # assert!(err.contains::<io::Error>());
 /// # assert!(err.contains::<ConfigError>());
 /// ```
-pub trait Context: fmt::Display + fmt::Debug + Send + Sync + 'static {
+pub trait Context: any::Any + fmt::Display + fmt::Debug + Send + Sync + 'static {
     /// Provide values which can then be requested by [`Report`].
     #[cfg(nightly)]
     #[allow(unused_variables)]

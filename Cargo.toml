@@ -42,6 +42,9 @@ supports-unicode = "2.0.0"
 owo-colors = "3.5.0"
 thiserror = "1.0.50"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_1_82)', 'cfg(rust_1_65)', 'cfg(nightly)'] }
+
 [build-dependencies]
 rustc_version = "0.4"
 

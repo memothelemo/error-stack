@@ -313,7 +313,14 @@ impl<C> Report<C> {
             report = report.attach(backtrace);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
+        // We already checked if Rust version is above its MSRV (1.65)
+        #[allow(clippy::incompatible_msrv)]
+        #[cfg(all(rust_1_82, feature = "std", not(feature = "backtrace")))]
+        if backtrace.status() == BacktraceStatus::Captured {
+            report = report.attach(backtrace);
+        }
+
+        #[cfg(all(not(rust_1_82), rust_1_65, feature = "std", not(feature = "backtrace")))]
         if let Some(backtrace) =
             backtrace.filter(|bt| matches!(bt.status(), BacktraceStatus::Captured))
         {

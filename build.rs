@@ -18,4 +18,8 @@ fn main() {
     if trimmed_rustc_version >= Version::new(1, 65, 0) {
         println!("cargo:rustc-cfg=rust_1_65");
     }
+
+    if trimmed_rustc_version >= Version::new(1, 82, 0) {
+        println!("cargo:rustc-cfg=rust_1_82");
+    }
 }
