@@ -278,10 +278,13 @@ impl<C> Report<C> {
             }
 
             // We create a new report with the oldest source as the base
-            let mut report = Report::from_frame(Frame::from_context(
-                sources.pop().expect("At least one context is guaranteed"),
-                Box::new([]),
-            ));
+            let mut report = Report::from_frame(
+                Frame::from_context(
+                    sources.pop().expect("At least one context is guaranteed"),
+                    Box::new([]),
+                ),
+                Some(*Location::caller()),
+            );
             // We then extend the report with the rest of the sources
             while let Some(source) = sources.pop() {
                 report = report.change_context(source);
@@ -291,19 +294,57 @@ impl<C> Report<C> {
         }
 
         // We don't have any sources, directly create the `Report` from the context
-        Self::from_frame(Frame::from_context(context, Box::new([])))
+        Self::from_frame(
+            Frame::from_context(context, Box::new([])),
+            Some(*Location::caller()),
+        )
+    }
+
+    /// Creates a new `Report<Context>` from a provided scope.
+    ///
+    /// If `context` does not provide [`Backtrace`]/[`SpanTrace`] then this attempts to capture
+    /// them directly. Please see the [`Backtrace` and `SpanTrace` section] of the `Report`
+    /// documentation for more information.
+    ///
+    /// [`Backtrace` and `SpanTrace` section]: #backtrace-and-spantrace
+    #[doc(hidden)]
+    #[inline]
+    #[track_caller]
+    #[expect(clippy::missing_panics_doc, reason = "No panic possible")]
+    pub fn new_without_location(context: C) -> Self
+    where
+        C: Context,
+    {
+        if let Some(mut current_source) = context.__source() {
+            // The sources needs to be applied in reversed order, so we buffer them in a vector
+            let mut sources = vec![SourceContext::from_error(current_source)];
+            while let Some(source) = current_source.source() {
+                sources.push(SourceContext::from_error(source));
+                current_source = source;
+            }
+
+            // We create a new report with the oldest source as the base
+            let mut report = Report::from_frame(
+                Frame::from_context(
+                    sources.pop().expect("At least one context is guaranteed"),
+                    Box::new([]),
+                ),
+                None,
+            );
+            // We then extend the report with the rest of the sources
+            while let Some(source) = sources.pop() {
+                report = report.change_context(source);
+            }
+            // Finally, we add the new context passed to this function
+            return report.change_context(context);
+        }
+
+        // We don't have any sources, directly create the `Report` from the context
+        Self::from_frame(Frame::from_context(context, Box::new([])), None)
     }
 
     #[track_caller]
-    pub(crate) fn from_frame(frame: Frame) -> Self {
-        #[cfg(nightly)]
-        let location = core::error::request_ref::<Location>(&frame.as_error())
-            .is_none()
-            .then_some(Location::caller());
-
-        #[cfg(not(nightly))]
-        let location = Some(Location::caller());
-
+    pub(crate) fn from_frame(frame: Frame, location: Option<Location<'static>>) -> Self {
         #[cfg(all(nightly, feature = "backtrace"))]
         let backtrace = core::error::request_ref::<Backtrace>(&frame.as_error())
             .filter(|backtrace| backtrace.status() == BacktraceStatus::Captured)
@@ -328,7 +369,7 @@ impl<C> Report<C> {
         };
 
         if let Some(location) = location {
-            report = report.attach(*location);
+            report = report.attach(location);
         }
 
         #[cfg(feature = "backtrace")]
@@ -524,6 +565,19 @@ impl<C: ?Sized> Report<C> {
         self
     }
 
+    /// Adds [`Location`] to the [`Frame`] stack.
+    #[doc(hidden)]
+    #[track_caller]
+    pub fn attach_location(mut self, location: Option<Location<'static>>) -> Self {
+        let location = location.unwrap_or(*Location::caller());
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        self.frames.insert(
+            0,
+            Frame::from_attachment(location, old_frames.into_boxed_slice()),
+        );
+        self
+    }
+
     /// Adds additional (printable) information to the [`Frame`] stack.
     ///
     /// This behaves like [`attach()`] but the display implementation will be called when
@@ -589,6 +643,25 @@ impl<C: ?Sized> Report<C> {
             *Location::caller(),
             context_frame.into_boxed_slice(),
         ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack, changing the type of the
+    /// `Report`.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[doc(hidden)]
+    #[track_caller]
+    pub fn change_context_retain_location<T>(mut self, context: T) -> Report<T>
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = Frame::from_context(context, old_frames.into_boxed_slice());
+        self.frames.push(context_frame);
         Report {
             frames: self.frames,
             _context: PhantomData,
