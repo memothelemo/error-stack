@@ -1,3 +1,5 @@
+#![expect(deprecated, reason = "We use `Context` to maintain compatibility")]
+
 use core::fmt;
 
 use crate::{Context, Report};
@@ -7,7 +9,7 @@ use crate::{Context, Report};
 /// A reasonable return type to use throughout an application.
 ///
 /// The `Result` type can be used with one or two parameters, where the first parameter represents
-/// the [`Ok`] arm and the second parameter `Context` is used as in [`Report<C>`].
+/// the [`Ok`] arm and the second parameter `Error` is used as in [`Report<C>`].
 ///
 /// # Examples
 ///
@@ -16,15 +18,15 @@ use crate::{Context, Report};
 /// ```rust
 /// # fn has_permission(_: (), _: ()) -> bool { true }
 /// # fn get_user() -> Result<(), AccessError> { Ok(()) }
-/// # fn get_resource() -> Result<(), AccessError> { Ok(()) }
+/// # fn get_resource() -> Result<(), Report<AccessError>> { Ok(()) }
 /// # #[derive(Debug)] enum AccessError { PermissionDenied((), ()) }
 /// # impl core::fmt::Display for AccessError {
 /// #    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }
 /// # }
-/// # impl error_stack::Context for AccessError {}
-/// use error_stack::{ensure, Result};
+/// # impl core::error::Error for AccessError {}
+/// use error_stack::{ensure, Report};
 ///
-/// fn main() -> Result<(), AccessError> {
+/// fn main() -> Result<(), Report<AccessError>> {
 ///     let user = get_user()?;
 ///     let resource = get_resource()?;
 ///
@@ -38,92 +40,20 @@ use crate::{Context, Report};
 ///     # }; Ok(())
 /// }
 /// ```
-pub type Result<T, C = ()> = core::result::Result<T, Report<C>>;
-
-/// Extension trait for [`Result`][core::result::Result] to provide context information on
-/// [`Report`]s with no explicit type argument (anonymized reports).
-pub trait AnyResultExt {
-    /// Type of the [`Ok`] value in the [`Result`]
-    type Ok;
-
-    /// Adds a new attachment to the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::attach`] on the [`Err`] variant, refer to it for more information.
-    fn attach<A>(self, attachment: A) -> core::result::Result<Self::Ok, Report>
-    where
-        A: Send + Sync + 'static;
-
-    /// Lazily adds a new attachment to the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::attach`] on the [`Err`] variant, refer to it for more information.
-    fn attach_lazy<A, F>(self, attachment: F) -> core::result::Result<Self::Ok, Report>
-    where
-        A: Send + Sync + 'static,
-        F: FnOnce() -> A;
-
-    /// Adds a new printable attachment to the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::attach_printable`] on the [`Err`] variant, refer to it for more
-    /// information.
-    fn attach_printable<A>(self, attachment: A) -> core::result::Result<Self::Ok, Report>
-    where
-        A: fmt::Display + fmt::Debug + Send + Sync + 'static;
-
-    /// Lazily adds a new printable attachment to the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::attach_printable`] on the [`Err`] variant, refer to it for more
-    /// information.
-    fn attach_printable_lazy<A, F>(self, attachment: F) -> core::result::Result<Self::Ok, Report>
-    where
-        A: fmt::Display + fmt::Debug + Send + Sync + 'static,
-        F: FnOnce() -> A;
-
-    /// Changes the context of the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
-    fn change_context<C>(self, context: C) -> core::result::Result<Self::Ok, Report>
-    where
-        C: Context;
-
-    /// Lazily changes the context of the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
-    fn change_context_lazy<C, F>(self, context: F) -> core::result::Result<Self::Ok, Report>
-    where
-        C: Context,
-        F: FnOnce() -> C;
-
-    /// Changes the context of the [`Report`] inside the [`Result`].
-    ///
-    /// Unlike [`AnyResultExt::change_context`], it changes from an anonymous [`Report`]
-    /// type to a [`Report`] with a context type.
-    ///
-    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
-    fn transform_context<C>(self, context: C) -> core::result::Result<Self::Ok, Report<C>>
-    where
-        C: Context;
-
-    /// Lazily changes the context of the [`Report`] inside the [`Result`].
-    ///
-    /// Applies [`Report::change_context`] on the [`Err`] variant, refer to it for more information.
-    fn transform_context_lazy<C, F>(self, context: F) -> core::result::Result<Self::Ok, Report<C>>
-    where
-        C: Context,
-        F: FnOnce() -> C;
-}
+#[deprecated(
+    note = "Use `core::result::Result<T, Report<C>>` instead",
+    since = "0.6.0"
+)]
+pub type Result<T, C> = core::result::Result<T, Report<C>>;
 
 /// Extension trait for [`Result`][core::result::Result] to provide context information on
 /// [`Report`]s.
 pub trait ResultExt {
     /// The [`Context`] type of the [`Result`].
-    type Context: Context;
+    type Context: ?Sized;
 
     /// Type of the [`Ok`] value in the [`Result`]
     type Ok;
-
-    /// Converts an explicit [`Report`] type argument to any [`Report`]
-    /// that may contains different errors
-    fn as_any_report(self) -> core::result::Result<Self::Ok, Report>;
 
     /// Adds a new attachment to the [`Report`] inside the [`Result`].
     ///
@@ -190,97 +120,81 @@ where
     type Ok = T;
 
     #[track_caller]
-    fn as_any_report(self) -> core::result::Result<T, Report> {
-        match self {
-            Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).as_any()),
-        }
-    }
-
-    #[track_caller]
-    fn attach<A>(self, attachment: A) -> Result<T, C>
+    fn attach<A>(self, attachment: A) -> core::result::Result<T, Report<C>>
     where
         A: Send + Sync + 'static,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).attach(attachment)),
+            Err(error) => Err(Report::new(error).attach(attachment)),
         }
     }
 
     #[track_caller]
-    fn attach_lazy<A, F>(self, attachment: F) -> Result<T, C>
+    fn attach_lazy<A, F>(self, attachment: F) -> core::result::Result<T, Report<C>>
     where
         A: Send + Sync + 'static,
         F: FnOnce() -> A,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).attach(attachment())),
+            Err(error) => Err(Report::new(error).attach(attachment())),
         }
     }
 
     #[track_caller]
-    fn attach_printable<A>(self, attachment: A) -> Result<T, C>
+    fn attach_printable<A>(self, attachment: A) -> core::result::Result<T, Report<C>>
     where
         A: fmt::Display + fmt::Debug + Send + Sync + 'static,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).attach_printable(attachment)),
+            Err(error) => Err(Report::new(error).attach_printable(attachment)),
         }
     }
 
     #[track_caller]
-    fn attach_printable_lazy<A, F>(self, attachment: F) -> Result<T, C>
+    fn attach_printable_lazy<A, F>(self, attachment: F) -> core::result::Result<T, Report<C>>
     where
         A: fmt::Display + fmt::Debug + Send + Sync + 'static,
         F: FnOnce() -> A,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).attach_printable(attachment())),
+            Err(error) => Err(Report::new(error).attach_printable(attachment())),
         }
     }
 
     #[track_caller]
-    fn change_context<C2>(self, context: C2) -> Result<T, C2>
+    fn change_context<C2>(self, context: C2) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).change_context(context)),
+            Err(error) => Err(Report::new(error).change_context(context)),
         }
     }
 
     #[track_caller]
-    fn change_context_lazy<C2, F>(self, context: F) -> Result<T, C2>
+    fn change_context_lazy<C2, F>(self, context: F) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
         F: FnOnce() -> C2,
     {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error).change_context(context())),
+            Err(error) => Err(Report::new(error).change_context(context())),
         }
     }
 }
 
-impl<T, C> ResultExt for Result<T, C>
+impl<T, C> ResultExt for core::result::Result<T, Report<C>>
 where
     C: Context,
 {
     type Context = C;
     type Ok = T;
-
-    #[track_caller]
-    fn as_any_report(self) -> Result<T> {
-        match self {
-            Ok(ok) => Ok(ok),
-            Err(report) => Err(report.as_any()),
-        }
-    }
 
     #[track_caller]
     fn attach<A>(self, attachment: A) -> Self
@@ -333,7 +247,7 @@ where
     }
 
     #[track_caller]
-    fn change_context<C2>(self, context: C2) -> Result<T, C2>
+    fn change_context<C2>(self, context: C2) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
     {
@@ -345,7 +259,7 @@ where
     }
 
     #[track_caller]
-    fn change_context_lazy<C2, F>(self, context: F) -> Result<T, C2>
+    fn change_context_lazy<C2, F>(self, context: F) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
         F: FnOnce() -> C2,
@@ -358,7 +272,11 @@ where
     }
 }
 
-impl<T> AnyResultExt for Result<T> {
+impl<T, C> ResultExt for core::result::Result<T, Report<[C]>>
+where
+    C: Context,
+{
+    type Context = [C];
     type Ok = T;
 
     #[track_caller]
@@ -412,19 +330,19 @@ impl<T> AnyResultExt for Result<T> {
     }
 
     #[track_caller]
-    fn change_context<C2>(self, context: C2) -> Result<T>
+    fn change_context<C2>(self, context: C2) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
     {
         // Can't use `map_err` as `#[track_caller]` is unstable on closures
         match self {
             Ok(ok) => Ok(ok),
-            Err(report) => Err(report.change_context_slient(context)),
+            Err(report) => Err(report.change_context(context)),
         }
     }
 
     #[track_caller]
-    fn change_context_lazy<C2, F>(self, context: F) -> Result<T>
+    fn change_context_lazy<C2, F>(self, context: F) -> core::result::Result<T, Report<C2>>
     where
         C2: Context,
         F: FnOnce() -> C2,
@@ -432,63 +350,7 @@ impl<T> AnyResultExt for Result<T> {
         // Can't use `map_err` as `#[track_caller]` is unstable on closures
         match self {
             Ok(ok) => Ok(ok),
-            Err(report) => Err(report.change_context_slient(context())),
-        }
-    }
-
-    #[track_caller]
-    fn transform_context<C>(self, context: C) -> Result<T, C>
-    where
-        C: Context,
-    {
-        match self {
-            Ok(ok) => Ok(ok),
-            Err(report) => Err(report.transform_context(context)),
-        }
-    }
-
-    #[track_caller]
-    fn transform_context_lazy<C, F>(self, context: F) -> Result<T, C>
-    where
-        C: Context,
-        F: FnOnce() -> C,
-    {
-        match self {
-            Ok(ok) => Ok(ok),
-            Err(report) => Err(report.transform_context(context())),
-        }
-    }
-}
-
-/// Extends [`Result`] to convert the [`Err`] variant to a [`Report`]
-#[deprecated(
-    since = "0.4.0",
-    note = "Use `ResultExt` or `From` via `Result::map_err(Report::from)` instead"
-)]
-pub trait IntoReport: Sized {
-    /// Type of the [`Ok`] value in the [`Result`]
-    type Ok;
-
-    /// Type of the resulting [`Err`] variant wrapped inside a [`Report<E>`].
-    type Err;
-
-    /// Converts the [`Err`] variant of the [`Result`] to a [`Report`]
-    fn into_report(self) -> Result<Self::Ok, Self::Err>;
-}
-
-#[allow(deprecated)]
-impl<T, E> IntoReport for core::result::Result<T, E>
-where
-    Report<E>: From<E>,
-{
-    type Err = E;
-    type Ok = T;
-
-    #[track_caller]
-    fn into_report(self) -> Result<T, E> {
-        match self {
-            Ok(value) => Ok(value),
-            Err(error) => Err(Report::from(error)),
+            Err(report) => Err(report.change_context(context())),
         }
     }
 }

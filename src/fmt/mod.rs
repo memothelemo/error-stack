@@ -1,3 +1,5 @@
+#![expect(deprecated, reason = "We use `Context` to maintain compatibility")]
+
 //! Implementation of formatting, to enable colors and the use of box-drawing characters use the
 //! `pretty-print` feature.
 //!
@@ -42,7 +44,7 @@
 //! ```rust
 //! # // we only test with nightly, which means that `render()` is unused on earlier version
 //! # #![cfg_attr(not(nightly), allow(dead_code, unused_variables, unused_imports))]
-//! use std::fmt::{Display, Formatter};
+//! use core::fmt::{Display, Formatter};
 //! use std::io::{Error, ErrorKind};
 //! use error_stack::Report;
 //!
@@ -107,7 +109,7 @@
 //! #     let value = backtrace.replace_all(&value, "backtrace no. $1\n  [redacted]");
 //! #     let value = backtrace_info.replace_all(value.as_ref(), "backtrace ($3)");
 //! #
-//! #     ansi_to_html::convert_escaped(value.as_ref()).unwrap()
+//! #     ansi_to_html::convert(value.as_ref()).unwrap()
 //! # }
 //! #
 //! # #[cfg(nightly)]
@@ -303,7 +305,7 @@ use alloc::{
     borrow::ToOwned,
     collections::VecDeque,
     format,
-    string::{String, ToString},
+    string::{String, ToString as _},
     vec,
     vec::Vec,
 };
@@ -315,17 +317,19 @@ use core::{
 
 pub use charset::Charset;
 pub use color::ColorMode;
-pub use config::Config;
 #[cfg(any(feature = "std", feature = "hooks"))]
 pub use hook::HookContext;
 #[cfg(any(feature = "std", feature = "hooks"))]
-pub(crate) use hook::{install_builtin_hooks, Format, Hooks};
+pub(crate) use hook::{Format, Hooks, install_builtin_hooks};
 #[cfg(not(any(feature = "std", feature = "hooks")))]
 use location::LocationAttachment;
 
 use crate::{
-    fmt::color::{Color, DisplayStyle, Style},
     AttachmentKind, Context, Frame, FrameKind, Report,
+    fmt::{
+        color::{Color, DisplayStyle, Style},
+        config::Config,
+    },
 };
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -430,9 +434,9 @@ struct SymbolDisplay<'a> {
 }
 
 impl Display for SymbolDisplay<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         for symbol in self.inner {
-            f.write_str(symbol.to_str(self.charset))?;
+            fmt.write_str(symbol.to_str(self.charset))?;
         }
 
         Ok(())
@@ -581,9 +585,11 @@ enum PreparedInstruction<'a> {
 }
 
 impl Instruction {
-    // Reason: the match arms are the same intentionally, this makes it more clean which variant
-    //  emits which and also keeps it nicely formatted.
-    #[allow(clippy::match_same_arms)]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "the match arms are the same intentionally, this makes it more clean which \
+                  variant emits which and also keeps it nicely formatted."
+    )]
     fn prepare(&self) -> PreparedInstruction {
         match self {
             Self::Value { value, style } => PreparedInstruction::Content(value, style),
@@ -669,7 +675,7 @@ struct LineDisplay<'a> {
 }
 
 impl Display for LineDisplay<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         for instruction in self.line.0.iter().rev() {
             Display::fmt(
                 &InstructionDisplay {
@@ -677,7 +683,7 @@ impl Display for LineDisplay<'_> {
                     charset: self.charset,
                     instruction,
                 },
-                f,
+                fmt,
             )?;
         }
 
@@ -688,7 +694,7 @@ impl Display for LineDisplay<'_> {
 struct Lines(VecDeque<Line>);
 
 impl Lines {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self(VecDeque::new())
     }
 
@@ -750,7 +756,7 @@ fn collect<'a>(root: &'a Frame, prefix: &'a [&Frame]) -> (Vec<&'a Frame>, &'a [F
     (stack, next)
 }
 
-/// Partition the tree, this looks for the first `Context`,
+/// Partition the tree, this looks for the first context frame,
 /// then moves it up the chain and adds it to our results.
 /// Once we reach the end all remaining items on the stack are added to the prefix pile,
 /// which will be used in next iteration.
@@ -822,7 +828,10 @@ impl Opaque {
     }
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
+#[cfg_attr(
+    not(any(feature = "std", feature = "hooks")),
+    expect(clippy::needless_pass_by_ref_mut)
+)]
 fn debug_attachments_invoke<'a>(
     frames: impl IntoIterator<Item = &'a Frame>,
     config: &mut Config,
@@ -1021,7 +1030,7 @@ fn debug_frame(root: &Frame, prefix: &[&Frame], config: &mut Config) -> Vec<Line
             // The attachments are rendered as direct descendants of the parent context
             let head_context = debug_context(
                 match head.kind() {
-                    FrameKind::Context(c) => c,
+                    FrameKind::Context(context) => context,
                     FrameKind::Attachment(_) => unreachable!(),
                 },
                 config.color_mode(),
@@ -1080,16 +1089,16 @@ fn debug_frame(root: &Frame, prefix: &[&Frame], config: &mut Config) -> Vec<Line
     vec![debug_render(head, contexts, sources)]
 }
 
-impl<C> Debug for Report<C> {
+impl<C: ?Sized> Debug for Report<C> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         let mut config = Config::load(fmt.alternate());
 
         let color = config.color_mode();
         let charset = config.charset();
 
-        #[cfg_attr(not(any(feature = "std", feature = "hooks")), allow(unused_mut))]
+        #[cfg_attr(not(any(feature = "std", feature = "hooks")), expect(unused_mut))]
         let mut lines = self
-            .current_frames()
+            .current_frames_unchecked()
             .iter()
             .flat_map(|frame| debug_frame(frame, &[], &mut config))
             .enumerate()
@@ -1149,7 +1158,7 @@ impl<C> Debug for Report<C> {
     }
 }
 
-impl<Context> Display for Report<Context> {
+impl<C: ?Sized> Display for Report<C> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         for (index, frame) in self
             .frames()

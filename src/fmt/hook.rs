@@ -3,13 +3,12 @@
 // implementation: `pub(crate)` and `pub`.
 #![cfg_attr(not(feature = "std"), allow(unreachable_pub))]
 
-#[cfg_attr(feature = "std", allow(unused_imports))]
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{any::TypeId, mem};
 
 pub(crate) use default::install_builtin_hooks;
 
-use crate::fmt::{charset::Charset, ColorMode, Frame};
+use crate::fmt::{ColorMode, Frame, charset::Charset};
 
 pub(crate) struct Format {
     alternate: bool,
@@ -366,7 +365,7 @@ impl<T> HookContext<T> {
         self.inner().extra().alternate
     }
 
-    pub fn take_body(&mut self) -> Vec<String> {
+    pub(crate) fn take_body(&mut self) -> Vec<String> {
         self.inner_mut().extra_mut().take_body()
     }
 }
@@ -421,7 +420,8 @@ fn into_boxed_hook<T: Send + Sync + 'static>(
 /// [`Display`]: core::fmt::Display
 /// [`Debug`]: core::fmt::Debug
 /// [`.insert()`]: Hooks::insert
-pub struct Hooks {
+#[expect(clippy::field_scoped_visibility_modifiers)]
+pub(crate) struct Hooks {
     // We use `Vec`, instead of `HashMap` or `BTreeMap`, so that ordering is consistent with the
     // insertion order of types.
     pub(crate) inner: Vec<(TypeId, BoxedHook)>,
@@ -440,8 +440,7 @@ impl Hooks {
         self.inner.push((type_id, into_boxed_hook(hook)));
     }
 
-    #[allow(unreachable_pub)]
-    pub fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
+    pub(crate) fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
         let mut hit = false;
 
         for (_, hook) in &self.inner {
@@ -453,17 +452,14 @@ impl Hooks {
 }
 
 mod default {
-    #[cfg(any(all(feature = "std", rust_1_65), feature = "spantrace"))]
+    #[cfg(any(feature = "backtrace", feature = "spantrace"))]
     use alloc::format;
-    #[cfg_attr(feature = "std", allow(unused_imports))]
-    use alloc::string::ToString;
-    #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
-    use backtrace::Backtrace;
+    use alloc::string::ToString as _;
     use core::{
         panic::Location,
         sync::atomic::{AtomicBool, Ordering},
     };
-    #[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
+    #[cfg(feature = "backtrace")]
     use std::backtrace::Backtrace;
     #[cfg(feature = "std")]
     use std::sync::Once;
@@ -474,8 +470,8 @@ mod default {
     use tracing_error::SpanTrace;
 
     use crate::{
-        fmt::{hook::HookContext, location::LocationAttachment},
         Report,
+        fmt::{hook::HookContext, location::LocationAttachment},
     };
 
     pub(crate) fn install_builtin_hooks() {
@@ -504,7 +500,7 @@ mod default {
 
             Report::install_debug_hook::<Location>(location);
 
-            #[cfg(all(feature = "std", rust_1_65))]
+            #[cfg(feature = "backtrace")]
             Report::install_debug_hook::<Backtrace>(backtrace);
 
             #[cfg(feature = "spantrace")]
@@ -516,14 +512,11 @@ mod default {
         context.push_body(LocationAttachment::new(location, context.color_mode()).to_string());
     }
 
-    #[cfg(all(feature = "std", rust_1_65))]
+    #[cfg(feature = "backtrace")]
     fn backtrace(backtrace: &Backtrace, context: &mut HookContext<Backtrace>) {
         let idx = context.increment_counter();
 
-        #[cfg(not(feature = "backtrace"))]
         context.push_appendix(format!("backtrace no. {}\n{backtrace}", idx + 1));
-        #[cfg(feature = "backtrace")]
-        context.push_appendix(format!("backtrace no. {}\n{backtrace:?}", idx + 1));
         #[cfg(nightly)]
         context.push_body(format!(
             "backtrace with {} frames ({})",

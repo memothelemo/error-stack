@@ -1,8 +1,8 @@
 use core::fmt::{self, Display, Formatter};
 
 use crate::{
-    fmt::r#override::{AtomicOverride, AtomicPreference},
     Report,
+    fmt::r#override::{AtomicOverride, AtomicPreference},
 };
 
 /// The available modes of color support
@@ -297,9 +297,9 @@ pub(crate) struct StyleDisplay<'a, T: Display> {
     value: &'a T,
 }
 
-impl<'a, T: Display> Display for StyleDisplay<'a, T> {
-    fn fmt(&self, mut f: &mut Formatter<'_>) -> fmt::Result {
-        let mut sequence = ControlSequence::new(f);
+impl<T: Display> Display for StyleDisplay<'_, T> {
+    fn fmt(&self, mut fmt: &mut Formatter<'_>) -> fmt::Result {
+        let mut sequence = ControlSequence::new(fmt);
 
         if let Some(display) = self.style.display {
             display.start_ansi(&mut sequence)?;
@@ -309,11 +309,11 @@ impl<'a, T: Display> Display for StyleDisplay<'a, T> {
             foreground.start_ansi(&mut sequence)?;
         }
 
-        f = sequence.finish()?;
+        fmt = sequence.finish()?;
 
-        Display::fmt(&self.value, f)?;
+        Display::fmt(&self.value, fmt)?;
 
-        let mut sequence = ControlSequence::new(f);
+        let mut sequence = ControlSequence::new(fmt);
 
         if let Some(display) = self.style.display {
             display.end_ansi(&mut sequence)?;

@@ -1,18 +1,11 @@
-#![allow(
-    clippy::print_stdout,
-    clippy::print_stderr,
-    unreachable_pub,
-    clippy::use_debug,
-    clippy::alloc_instead_of_core,
-    clippy::std_instead_of_alloc,
-    clippy::std_instead_of_core
-)]
+#![expect(clippy::print_stderr, unreachable_pub, clippy::use_debug)]
 // This is the same example also used in `lib.rs`. When updating this, don't forget updating the doc
 // example as well. This example is mainly used to generate the output shown in the documentation.
 
-use std::{fmt, fs, path::Path};
+use core::{error::Error, fmt};
+use std::{fs, path::Path};
 
-use error_stack::{Context, Report, ResultExt};
+use error_stack::{Report, ResultExt as _};
 
 pub type Config = String;
 
@@ -32,18 +25,17 @@ impl fmt::Display for ParseConfigError {
     }
 }
 
-impl Context for ParseConfigError {}
+impl Error for ParseConfigError {}
 
 struct Suggestion(&'static str);
 
-fn parse_config(path: impl AsRef<Path>) -> Result<Config, Report> {
+fn parse_config(path: impl AsRef<Path>) -> Result<Config, Report<ParseConfigError>> {
     let path = path.as_ref();
 
     let content = fs::read_to_string(path)
         .change_context(ParseConfigError::new())
         .attach(Suggestion("use a file you can read next time!"))
-        .attach_printable_lazy(|| format!("could not read file {path:?}"))
-        .as_any_report()?;
+        .attach_printable_lazy(|| format!("could not read file {path:?}"))?;
 
     Ok(content)
 }

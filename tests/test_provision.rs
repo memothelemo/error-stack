@@ -1,9 +1,8 @@
 #![cfg(nightly)]
-#![cfg_attr(nightly, feature(error_in_core, error_generic_member_access))]
+#![cfg_attr(nightly, feature(error_generic_member_access))]
 
 mod common;
 
-#[allow(clippy::wildcard_imports)]
 use common::*;
 use error_stack::Report;
 

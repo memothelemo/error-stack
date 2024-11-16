@@ -1,11 +1,10 @@
 pub(crate) mod context;
 
-#[cfg_attr(feature = "std", allow(unused_imports))]
 use alloc::vec::Vec;
 
 use crate::{
-    fmt::{install_builtin_hooks, Hooks},
     Report,
+    fmt::{Hooks, install_builtin_hooks},
 };
 
 #[cfg(feature = "std")]
@@ -75,15 +74,15 @@ impl Report<()> {
     /// ```rust
     /// # // this is a lot of boilerplate, if you find a better way, please change this!
     /// # // with #![cfg(nightly)] docsrs will complain that there's no main in non-nightly
-    /// # #![cfg_attr(nightly, feature(error_in_core, error_generic_member_access))]
+    /// # #![cfg_attr(nightly, feature(error_generic_member_access))]
     /// # const _: &'static str = r#"
     /// #![feature(error_generic_member_access)]
     /// # "#;
     ///
     /// # #[cfg(nightly)]
     /// # mod nightly {
-    /// use std::error::{Request, Error};
-    /// use std::fmt::{Display, Formatter};
+    /// use core::error::{Request, Error};
+    /// use core::fmt;
     /// use error_stack::{Report, report};
     ///
     /// struct Suggestion(&'static str);
@@ -97,9 +96,9 @@ impl Report<()> {
     ///     code: ErrorCode
     /// }
     ///
-    /// impl Display for UserError {
-    ///     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    ///         f.write_str("invalid user input")
+    /// impl fmt::Display for UserError {
+    ///     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    ///         fmt.write_str("invalid user input")
     ///     }
     /// }
     ///
@@ -217,9 +216,8 @@ impl Report<()> {
     /// Returns the hook that was previously set by [`install_debug_hook`]
     ///
     /// [`install_debug_hook`]: Self::install_debug_hook
-    #[allow(private_bounds)]
     #[cfg(any(feature = "std", feature = "hooks"))]
-    pub fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
+    pub(crate) fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
         install_builtin_hooks();
 
         // TODO: Use `let ... else` when MSRV is 1.65

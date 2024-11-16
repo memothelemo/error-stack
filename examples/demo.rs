@@ -1,18 +1,9 @@
-#![allow(
-    clippy::print_stdout,
-    clippy::print_stderr,
-    unreachable_pub,
-    clippy::use_debug,
-    clippy::alloc_instead_of_core,
-    clippy::std_instead_of_alloc,
-    clippy::std_instead_of_core
-)]
 // This is the same example also used in the README.md. When updating this, don't forget updating
 // the README.md as well. This is mainly used to test the code and generate the output shown.
 
-use std::fmt;
+use core::{error::Error, fmt};
 
-use error_stack::{AnyResultExt, Context, Report, Result, ResultExt};
+use error_stack::{Report, ResultExt as _};
 
 #[derive(Debug)]
 struct ParseExperimentError;
@@ -23,11 +14,13 @@ impl fmt::Display for ParseExperimentError {
     }
 }
 
-impl Context for ParseExperimentError {}
+impl Error for ParseExperimentError {}
 
-// Reason: false-positive, try_fold is fail-fast, our implementation is fail-slow.
-#[allow(clippy::manual_try_fold)]
-fn parse_experiment(description: &str) -> Result<Vec<(u64, u64)>> {
+#[expect(
+    clippy::manual_try_fold,
+    reason = "false-positive, try_fold is fail-fast, our implementation is fail-slow"
+)]
+fn parse_experiment(description: &str) -> Result<Vec<(u64, u64)>, Report<ParseExperimentError>> {
     let values = description
         .split(' ')
         .map(|value| {
@@ -42,16 +35,15 @@ fn parse_experiment(description: &str) -> Result<Vec<(u64, u64)>> {
 
                 Ok(accum)
             }
-            (Ok(_), Err(err)) => Err(err),
+            (Ok(_), Err(err)) => Err(err.expand()),
             (Err(accum), Ok(_)) => Err(accum),
             (Err(mut accum), Err(err)) => {
-                accum.extend_one(err);
+                accum.push(err);
 
                 Err(accum)
             }
         })
-        .change_context(ParseExperimentError)
-        .as_any_report()?;
+        .change_context(ParseExperimentError)?;
 
     Ok(values)
 }
@@ -65,24 +57,23 @@ impl fmt::Display for ExperimentError {
     }
 }
 
-impl Context for ExperimentError {}
+impl Error for ExperimentError {}
 
-// Reason: false-positive, try_fold is fail-fast, our implementation is fail-slow.
-#[allow(clippy::manual_try_fold)]
+#[expect(
+    clippy::manual_try_fold,
+    reason = "false-positive, try_fold is fail-fast, our implementation is fail-slow"
+)]
 fn start_experiments(
     experiment_ids: &[usize],
     experiment_descriptions: &[&str],
-) -> Result<Vec<u64>> {
+) -> Result<Vec<u64>, Report<[ExperimentError]>> {
     let experiments = experiment_ids
         .iter()
         .map(|exp_id| {
-            let description = experiment_descriptions
-                .get(*exp_id)
-                .ok_or_else(|| {
-                    Report::new(ExperimentError)
-                        .attach_printable(format!("experiment {exp_id} has no valid description"))
-                })
-                .as_any_report()?;
+            let description = experiment_descriptions.get(*exp_id).ok_or_else(|| {
+                Report::new(ExperimentError)
+                    .attach_printable(format!("experiment {exp_id} has no valid description"))
+            })?;
 
             let experiments = parse_experiment(description)
                 .attach_printable(format!("experiment {exp_id} could not be parsed"))
@@ -90,31 +81,34 @@ fn start_experiments(
 
             let experiments = experiments
                 .into_iter()
-                .map(|(a, b)| move || a * b)
+                .map(|(lhs, rhs)| move || lhs * rhs)
                 .collect::<Vec<_>>();
 
             Ok(experiments)
         })
-        .fold(Ok(vec![]), |accum: Result<_>, value| match (accum, value) {
-            (Ok(mut accum), Ok(value)) => {
-                accum.extend(value);
+        .fold(
+            Ok(vec![]),
+            |accum, value: Result<_, Report<ExperimentError>>| match (accum, value) {
+                (Ok(mut accum), Ok(value)) => {
+                    accum.extend(value);
 
-                Ok(accum)
-            }
-            (Ok(_), Err(err)) => Err(err),
-            (Err(accum), Ok(_)) => Err(accum),
-            (Err(mut accum), Err(err)) => {
-                accum.extend_one(err);
+                    Ok(accum)
+                }
+                (Ok(_), Err(err)) => Err(err.expand()),
+                (Err(accum), Ok(_)) => Err(accum),
+                (Err(mut accum), Err(err)) => {
+                    accum.push(err);
 
-                Err(accum)
-            }
-        })
+                    Err(accum)
+                }
+            },
+        )
         .attach_printable("unable to set up experiments")?;
 
     Ok(experiments.iter().map(|experiment| experiment()).collect())
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Report<[ExperimentError]>> {
     let experiment_ids = &[0, 2, 3];
     let experiment_descriptions = &["10", "20", "3o 4a"];
     start_experiments(experiment_ids, experiment_descriptions)?;

@@ -1,5 +1,6 @@
 #![cfg(any(feature = "eyre", feature = "anyhow"))]
-#![cfg_attr(nightly, feature(error_in_core, error_generic_member_access))]
+#![cfg_attr(nightly, feature(error_generic_member_access))]
+#![cfg_attr(nightly, allow(clippy::incompatible_msrv))]
 #![cfg_attr(all(nightly, feature = "std"), feature(backtrace_frames))]
 
 mod common;
@@ -7,10 +8,9 @@ mod common;
 #[cfg(nightly)]
 use core::error;
 
-#[allow(clippy::wildcard_imports)]
 use common::*;
-use error_stack::IntoReportCompat;
-#[cfg(all(nightly, feature = "std"))]
+use error_stack::IntoReportCompat as _;
+#[cfg(all(nightly, feature = "backtrace"))]
 use error_stack::Report;
 
 #[test]
@@ -45,14 +45,13 @@ fn anyhow() {
         .attach_printable(PrintableA(0))
         .attach_printable(PrintableB(0));
 
-    #[allow(unused_mut)]
+    #[expect(unused_mut)]
     let mut report_messages = messages(&report);
 
     let anyhow_report = anyhow
         .into_report()
         .expect_err("should have returned error");
-    #[allow(unused_mut)]
-    let mut anyhow_messages = messages(&anyhow_report);
+    let anyhow_messages = messages(&anyhow_report);
 
     assert_eq!(
         remove_builtin_messages(anyhow_messages.into_iter().rev()),
@@ -77,7 +76,7 @@ fn anyhow_nostd() {
 }
 
 #[test]
-#[cfg(all(nightly, feature = "std", feature = "anyhow"))]
+#[cfg(all(nightly, feature = "backtrace", feature = "anyhow"))]
 fn anyhow_backtrace() {
     let error = anyhow::anyhow!("test error");
     let error_backtrace = error.backtrace();
@@ -156,13 +155,10 @@ fn eyre() {
     let report = create_report()
         .attach_printable(PrintableA(0))
         .attach_printable(PrintableB(0));
-
-    #[allow(unused_mut)]
-    let mut report_messages = messages(&report);
+    let report_messages = messages(&report);
 
     let eyre_report = eyre.into_report().expect_err("should have returned error");
-    #[allow(unused_mut)]
-    let mut eyre_messages = messages(&eyre_report);
+    let eyre_messages = messages(&eyre_report);
 
     assert_eq!(
         remove_builtin_messages(eyre_messages.into_iter().rev()),
@@ -171,7 +167,7 @@ fn eyre() {
 }
 
 #[test]
-#[cfg(all(nightly, feature = "eyre", feature = "std"))]
+#[cfg(all(nightly, feature = "eyre", feature = "backtrace"))]
 #[ignore = "bug: `eyre` currently does not provide a backtrace`"]
 fn eyre_backtrace() {
     install_eyre_hook();

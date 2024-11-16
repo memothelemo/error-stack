@@ -1,12 +1,9 @@
-#[cfg_attr(feature = "std", allow(unused_imports))]
+#![expect(deprecated, reason = "We use `Context` to maintain compatibility")]
+
 use alloc::{boxed::Box, vec, vec::Vec};
-#[cfg(nightly)]
-use core::error::Error;
-use core::{fmt, marker::PhantomData, mem, panic::Location};
-#[cfg(all(rust_1_65, feature = "std", not(feature = "backtrace")))]
+use core::{error::Error, fmt, marker::PhantomData, mem, panic::Location};
+#[cfg(feature = "backtrace")]
 use std::backtrace::{Backtrace, BacktraceStatus};
-#[cfg(all(not(nightly), feature = "std"))]
-use std::error::Error;
 #[cfg(feature = "std")]
 use std::process::ExitCode;
 
@@ -16,6 +13,7 @@ use tracing_error::{SpanTrace, SpanTraceStatus};
 #[cfg(nightly)]
 use crate::iter::{RequestRef, RequestValue};
 use crate::{
+    context::SourceContext,
     iter::{Frames, FramesMut},
     Context, Frame,
 };
@@ -46,9 +44,14 @@ use crate::{
 ///
 /// ## Multiple Errors
 ///
-/// `Report` is able to represent multiple errors that have occurred. Errors can be combined using
-/// the [`extend_one()`], which will add the [`Frame`] stack of the other error as an additional
-/// source to the current report.
+/// `Report` comes in two variants: `Report<C>` which represents a single error context, and
+/// `Report<[C]>` which can represent multiple error contexts. To combine multiple errors,
+/// first convert a `Report<C>` to `Report<[C]>` using [`expand()`], then use [`push()`] to
+/// add additional errors. This allows for representing complex error scenarios with multiple
+/// related simultaneous errors.
+///
+/// [`expand()`]: Self::expand
+/// [`push()`]: Self::push
 ///
 /// ## `Backtrace` and `SpanTrace`
 ///
@@ -83,10 +86,10 @@ use crate::{
 /// ## Provide a context for an error
 ///
 /// ```rust
-/// use error_stack::{ResultExt, Result};
+/// use error_stack::ResultExt;
 ///
 /// # #[allow(dead_code)]
-/// # fn fake_main() -> Result<String, std::io::Error> {
+/// # fn fake_main() -> Result<String, error_stack::Report<std::io::Error>> {
 /// let config_path = "./path/to/config.file";
 /// let content = std::fs::read_to_string(config_path)
 ///     .attach_printable_lazy(|| format!("failed to read config file {config_path:?}"))?;
@@ -99,9 +102,9 @@ use crate::{
 /// ## Enforce a context for an error
 ///
 /// ```rust
-/// use std::{fmt, path::{Path, PathBuf}};
+/// use std::{error::Error, fmt, path::{Path, PathBuf}};
 ///
-/// use error_stack::{Context, Report, ResultExt};
+/// use error_stack::{Report, ResultExt};
 ///
 /// #[derive(Debug)]
 /// # #[derive(PartialEq)]
@@ -140,8 +143,8 @@ use crate::{
 ///     # }
 /// }
 ///
-/// impl Context for RuntimeError {}
-/// impl Context for ConfigError {}
+/// impl Error for RuntimeError {}
+/// impl Error for ConfigError {}
 ///
 /// # #[allow(unused_variables)]
 /// fn read_config(path: impl AsRef<Path>) -> Result<String, Report<ConfigError>> {
@@ -207,10 +210,10 @@ use crate::{
 /// ## Get the attached [`Backtrace`] and [`SpanTrace`]:
 ///
 /// ```rust,should_panic
-/// use error_stack::{ResultExt, Result};
+/// use error_stack::{ResultExt, Report};
 ///
 /// # #[allow(unused_variables)]
-/// # fn main() -> Result<(), std::io::Error> {
+/// # fn main() -> Result<(), Report<std::io::Error>> {
 /// let config_path = "./path/to/config.file";
 /// let content = std::fs::read_to_string(config_path)
 ///     .attach_printable_lazy(|| format!("failed to read config file {config_path:?}"));
@@ -239,13 +242,14 @@ use crate::{
 /// # }
 /// ```
 #[must_use]
-pub struct Report<C = ()> {
+#[expect(clippy::field_scoped_visibility_modifiers)]
+pub struct Report<C: ?Sized> {
     // The vector is boxed as this implies a memory footprint equal to a single pointer size
     // instead of three pointer sizes. Even for small `Result::Ok` variants, the `Result` would
     // still have at least the size of `Report`, even at the happy path. It's unexpected, that
     // creating or traversing a report will happen in the hot path, so a double indirection is
     // a good trade-off.
-    #[allow(clippy::box_collection)]
+    #[expect(clippy::box_collection)]
     pub(super) frames: Box<Vec<Frame>>,
     _context: PhantomData<fn() -> *const C>,
 }
@@ -260,36 +264,54 @@ impl<C> Report<C> {
     /// [`Backtrace` and `SpanTrace` section]: #backtrace-and-spantrace
     #[inline]
     #[track_caller]
+    #[expect(clippy::missing_panics_doc, reason = "No panic possible")]
     pub fn new(context: C) -> Self
     where
         C: Context,
     {
+        if let Some(mut current_source) = context.__source() {
+            // The sources needs to be applied in reversed order, so we buffer them in a vector
+            let mut sources = vec![SourceContext::from_error(current_source)];
+            while let Some(source) = current_source.source() {
+                sources.push(SourceContext::from_error(source));
+                current_source = source;
+            }
+
+            // We create a new report with the oldest source as the base
+            let mut report = Report::from_frame(Frame::from_context(
+                sources.pop().expect("At least one context is guaranteed"),
+                Box::new([]),
+            ));
+            // We then extend the report with the rest of the sources
+            while let Some(source) = sources.pop() {
+                report = report.change_context(source);
+            }
+            // Finally, we add the new context passed to this function
+            return report.change_context(context);
+        }
+
+        // We don't have any sources, directly create the `Report` from the context
         Self::from_frame(Frame::from_context(context, Box::new([])))
     }
 
     #[track_caller]
     pub(crate) fn from_frame(frame: Frame) -> Self {
-        #[cfg(not(feature = "exclude-location"))]
         #[cfg(nightly)]
         let location = core::error::request_ref::<Location>(&frame.as_error())
             .is_none()
             .then_some(Location::caller());
 
-        #[cfg(not(feature = "exclude-location"))]
         #[cfg(not(nightly))]
         let location = Some(Location::caller());
 
-        #[cfg(all(not(feature = "backtrace"), nightly, feature = "std"))]
+        #[cfg(all(nightly, feature = "backtrace"))]
         let backtrace = core::error::request_ref::<Backtrace>(&frame.as_error())
             .filter(|backtrace| backtrace.status() == BacktraceStatus::Captured)
             .is_none()
             .then(Backtrace::capture);
 
-        #[cfg(all(rust_1_65, feature = "backtrace", feature = "std"))]
-        let backtrace = Some(backtrace::Backtrace::new());
-
-        #[cfg(all(rust_1_65, not(nightly), not(feature = "backtrace"), feature = "std"))]
-        let backtrace = Backtrace::capture();
+        #[cfg(all(not(nightly), feature = "backtrace"))]
+        let backtrace = Some(Backtrace::capture());
 
         #[cfg(all(nightly, feature = "spantrace"))]
         let span_trace = core::error::request_ref::<SpanTrace>(&frame.as_error())
@@ -300,35 +322,16 @@ impl<C> Report<C> {
         #[cfg(all(not(nightly), feature = "spantrace"))]
         let span_trace = Some(SpanTrace::capture());
 
-        #[allow(unused_mut)]
         let mut report = Self {
             frames: Box::new(vec![frame]),
             _context: PhantomData,
         };
 
-        #[cfg(not(feature = "exclude-location"))]
         if let Some(location) = location {
             report = report.attach(*location);
         }
 
-        #[cfg(all(rust_1_65, feature = "std", feature = "backtrace"))]
-        {
-            report = report.attach(backtrace);
-        }
-
-        // We already checked if Rust version is above its MSRV (1.65)
-        #[allow(clippy::incompatible_msrv)]
-        #[cfg(all(rust_1_82, not(nightly), feature = "std", not(feature = "backtrace")))]
-        if backtrace.status() == BacktraceStatus::Captured {
-            report = report.attach(backtrace);
-        }
-
-        #[cfg(all(
-            any(not(rust_1_82), nightly),
-            rust_1_65,
-            feature = "std",
-            not(feature = "backtrace")
-        ))]
+        #[cfg(feature = "backtrace")]
         if let Some(backtrace) =
             backtrace.filter(|bt| matches!(bt.status(), BacktraceStatus::Captured))
         {
@@ -343,90 +346,145 @@ impl<C> Report<C> {
         report
     }
 
-    /// Merge two [`Report`]s together
+    /// Converts a `Report` with a single context into a `Report` with multiple contexts.
     ///
-    /// This function appends the [`current_frames()`] of the other [`Report`] to the
-    /// [`current_frames()`] of this report.
-    /// Meaning `A.extend_one(B) -> A.current_frames() = A.current_frames() + B.current_frames()`
+    /// This function allows for the transformation of a `Report<C>` into a `Report<[C]>`,
+    /// enabling the report to potentially hold multiple current contexts of the same type.
     ///
-    /// [`current_frames()`]: Self::current_frames
+    /// # Example
     ///
-    /// ```rust
-    /// use std::{
-    ///     fmt::{Display, Formatter},
-    ///     path::Path,
-    /// };
-    ///
-    /// use error_stack::{Context, Report, ResultExt};
+    /// ```
+    /// use error_stack::Report;
     ///
     /// #[derive(Debug)]
-    /// struct IoError;
+    /// struct SystemFailure;
     ///
-    /// impl Display for IoError {
-    ///     # fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    ///     #     const _: &str = stringify!(
-    ///             ...
-    ///     #     );
-    ///     #     f.write_str("Io Error")
-    ///     # }
+    /// impl std::fmt::Display for SystemFailure {
+    ///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    ///         f.write_str("System failure occured")
+    ///     }
     /// }
     ///
-    /// # impl Context for IoError {}
+    /// impl core::error::Error for SystemFailure {}
     ///
-    /// # #[allow(unused_variables)]
-    /// fn read_config(path: impl AsRef<Path>) -> Result<String, Report<IoError>> {
-    ///     # #[cfg(any(miri, not(feature = "std")))]
-    ///     # return Err(error_stack::report!(IoError).attach_printable("Not supported"));
-    ///     # #[cfg(all(not(miri), feature = "std"))]
-    ///     std::fs::read_to_string(path.as_ref())
-    ///         .change_context(IoError)
-    /// }
+    /// // Type annotations are used here to illustrate the types used, these are not required
+    /// let failure: Report<SystemFailure> = Report::new(SystemFailure);
+    /// let mut failures: Report<[SystemFailure]> = failure.expand();
     ///
-    /// let mut error1 = read_config("config.txt").unwrap_err();
-    /// let error2 = read_config("config2.txt").unwrap_err();
-    /// let mut error3 = read_config("config3.txt").unwrap_err();
+    /// assert_eq!(failures.current_frames().len(), 1);
     ///
-    /// error1.extend_one(error2);
-    /// error3.extend_one(error1);
+    /// let another_failure = Report::new(SystemFailure);
+    /// failures.push(another_failure);
     ///
-    /// // ^ This is equivalent to:
-    /// // error3.extend_one(error1);
-    /// // error3.extend_one(error2);
+    /// assert_eq!(failures.current_frames().len(), 2);
     /// ```
-    ///
-    /// This function implements the same functionality as
-    /// [`Extend::extend_one` (#7261)](https://github.com/rust-lang/rust/issues/72631).
-    /// Once stabilised this function will be removed in favor of [`Extend`].
-    ///
-    /// [`extend_one()`]: Self::extend_one
-    // TODO: once #7261 is stabilized deprecate and remove this function
-    #[allow(clippy::same_name_method)]
-    pub fn extend_one(&mut self, mut report: Self) {
-        self.frames.append(&mut report.frames);
+    pub fn expand(self) -> Report<[C]> {
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
     }
 
-    /// Adds additional information to the [`Frame`] stack but it will be dumped as the first element.
+    /// Return the direct current frames of this report,
+    /// to get an iterator over the topological sorting of all frames refer to [`frames()`]
     ///
-    /// This behaves like [`attach_printable()`] but will not be shown when printing the [`Report`].
-    /// To benefit from seeing attachments in normal error outputs, use [`attach_printable()`]
+    /// This is not the same as [`Report::current_context`], this function gets the underlying
+    /// frames that make up this report, while [`Report::current_context`] traverses the stack of
+    /// frames to find the current context. A [`Report`] and be made up of multiple [`Frame`]s,
+    /// which stack on top of each other. Considering `PrintableA<PrintableA<Context>>`,
+    /// [`Report::current_frame`] will return the "outer" layer `PrintableA`, while
+    /// [`Report::current_context`] will return the underlying `Error` (the current type
+    /// parameter of this [`Report`])
     ///
-    /// **Note:** [`attach_printable()`] will be deprecated when specialization is stabilized and
-    /// it becomes possible to merge these two methods.
+    /// A report can be made up of multiple stacks of frames and builds a "group" of them, this can
+    /// be achieved through first calling [`Report::expand`] and then either using [`Extend`]
+    /// or [`Report::push`].
     ///
-    /// [`Display`]: core::fmt::Display
-    /// [`Debug`]: core::fmt::Debug
-    /// [`attach_printable()`]: Self::attach_printable
-    #[track_caller]
-    pub fn attach_as_first<A>(mut self, attachment: A) -> Self
+    /// [`frames()`]: Self::frames
+    #[must_use]
+    pub fn current_frame(&self) -> &Frame {
+        // this never fails, because one cannot push an additional frame without making it a
+        // `Report<[C]>`
+        &self.frames[0]
+    }
+
+    /// Returns the current context of the `Report`.
+    ///
+    /// If the user want to get the latest context, `current_context` can be called. If the user
+    /// wants to handle the error, the context can then be used to directly access the context's
+    /// type. This is only possible for the latest context as the Report does not have multiple
+    /// generics as this would either require variadic generics or a workaround like tuple-list.
+    ///
+    /// This is one disadvantage of the library in comparison to plain Errors, as in these cases,
+    /// all context types are known.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// # use std::{fs, path::Path};
+    /// # use error_stack::Report;
+    /// use std::io;
+    ///
+    /// fn read_file(path: impl AsRef<Path>) -> Result<String, Report<io::Error>> {
+    ///     # const _: &str = stringify! {
+    ///     ...
+    ///     # };
+    ///     # fs::read_to_string(path.as_ref()).map_err(Report::from)
+    /// }
+    ///
+    /// let report = read_file("test.txt").unwrap_err();
+    /// let io_error = report.current_context();
+    /// assert_eq!(io_error.kind(), io::ErrorKind::NotFound);
+    /// ```
+    #[must_use]
+    pub fn current_context(&self) -> &C
     where
-        A: Send + Sync + 'static,
+        C: Send + Sync + 'static,
     {
-        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
-        self.frames.insert(
-            0,
-            Frame::from_attachment(attachment, old_frames.into_boxed_slice()),
-        );
-        self
+        self.downcast_ref().unwrap_or_else(|| {
+            // Panics if there isn't an attached context which matches `T`. As it's not possible to
+            // create a `Report` without a valid context and this method can only be called when `T`
+            // is a valid context, it's guaranteed that the context is available.
+            unreachable!(
+                "Report does not contain a context. This is considered a bug and should be \
+                reported to https://github.com/hashintel/hash/issues/new/choose"
+            );
+        })
+    }
+
+    /// Converts this `Report` to an [`Error`].
+    #[must_use]
+    pub fn into_error(self) -> impl Error + Send + Sync + 'static
+    where
+        C: 'static,
+    {
+        crate::error::ReportError::new(self)
+    }
+
+    /// Returns this `Report` as an [`Error`].
+    #[must_use]
+    pub fn as_error(&self) -> &(impl Error + Send + Sync + 'static)
+    where
+        C: 'static,
+    {
+        crate::error::ReportError::from_ref(self)
+    }
+}
+
+impl<C: ?Sized> Report<C> {
+    /// Retrieves the current frames of the `Report`, regardless of its current type state.
+    ///
+    /// You should prefer using [`Report::current_frame`] or [`Report::current_frames`] instead of
+    /// this function, as those properly interact with the type state of the `Report`.
+    ///
+    /// # Use Cases
+    ///
+    /// This function is primarily used to implement traits that require access to the frames,
+    /// such as [`Debug`]. It allows for code reuse between `Report<C>` and `Report<[C]>`
+    /// implementations without duplicating logic.
+    #[must_use]
+    pub(crate) fn current_frames_unchecked(&self) -> &[Frame] {
+        &self.frames
     }
 
     /// Adds additional information to the [`Frame`] stack.
@@ -466,7 +524,8 @@ impl<C> Report<C> {
     /// ## Example
     ///
     /// ```rust
-    /// use std::{fmt, fs};
+    /// use core::fmt;
+    /// use std::fs;
     ///
     /// use error_stack::ResultExt;
     ///
@@ -521,47 +580,6 @@ impl<C> Report<C> {
             frames: self.frames,
             _context: PhantomData,
         }
-    }
-
-    /// Add a new [`Context`] object to the top of the [`Frame`] stack, changing the type of the
-    /// `Report`.
-    ///
-    /// Please see the [`Context`] documentation for more information.
-    #[track_caller]
-    pub fn change_context_no_location<T>(mut self, context: T) -> Report<T>
-    where
-        T: Context,
-    {
-        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
-        let context_frame = Frame::from_context(context, old_frames.into_boxed_slice());
-        self.frames.push(context_frame);
-        Report {
-            frames: self.frames,
-            _context: PhantomData,
-        }
-    }
-
-    /// Return the direct current frames of this report,
-    /// to get an iterator over the topological sorting of all frames refer to [`frames()`]
-    ///
-    /// This is not the same as [`Report::current_context`], this function gets the underlying
-    /// frames that make up this report, while [`Report::current_context`] traverses the stack of
-    /// frames to find the current context. A [`Report`] and be made up of multiple [`Frame`]s,
-    /// which stack on top of each other. Considering `PrintableA<PrintableA<Context>>`,
-    /// [`Report::current_frames`] will return the "outer" layer `PrintableA`, while
-    /// [`Report::current_context`] will return the underlying `Context` (the current type
-    /// parameter of this [`Report`])
-    ///
-    /// Using [`Extend`] and [`extend_one()`], a [`Report`] can additionally be made up of multiple
-    /// stacks of frames and builds a "group" of them, but a [`Report`] can only ever have a single
-    /// `Context`, therefore this function returns a slice instead, while
-    /// [`Report::current_context`] only returns a single reference.
-    ///
-    /// [`frames()`]: Self::frames
-    /// [`extend_one()`]: Self::extend_one
-    #[must_use]
-    pub fn current_frames(&self) -> &[Frame] {
-        &self.frames
     }
 
     /// Returns an iterator over the [`Frame`] stack of the report.
@@ -647,20 +665,133 @@ impl<C> Report<C> {
     pub fn downcast_mut<T: Send + Sync + 'static>(&mut self) -> Option<&mut T> {
         self.frames_mut().find_map(Frame::downcast_mut::<T>)
     }
+}
 
-    /// Returns the current context of the `Report`.
+impl<C> Report<[C]> {
+    /// Return the direct current frames of this report,
+    /// to get an iterator over the topological sorting of all frames refer to [`frames()`]
     ///
-    /// If the user want to get the latest context, `current_context` can be called. If the user
-    /// wants to handle the error, the context can then be used to directly access the context's
-    /// type. This is only possible for the latest context as the Report does not have multiple
-    /// generics as this would either require variadic generics or a workaround like tuple-list.
+    /// This is not the same as [`Report::current_context`], this function gets the underlying
+    /// frames that make up this report, while [`Report::current_context`] traverses the stack of
+    /// frames to find the current context. A [`Report`] and be made up of multiple [`Frame`]s,
+    /// which stack on top of each other. Considering `PrintableA<PrintableA<Context>>`,
+    /// [`Report::current_frames`] will return the "outer" layer `PrintableA`, while
+    /// [`Report::current_context`] will return the underlying `Error` (the current type
+    /// parameter of this [`Report`])
     ///
-    /// This is one disadvantage of the library in comparison to plain Errors, as in these cases,
-    /// all context types are known.
+    /// Using [`Extend`], [`push()`] and [`append()`], a [`Report`] can additionally be made up of
+    /// multiple stacks of frames and builds a "group" of them, therefore this function returns a
+    /// slice instead, while [`Report::current_context`] only returns a single reference.
     ///
-    /// # Safety
-    /// This function assumes that `T` generic of the report contains
-    /// a report associated with `T` type argument.
+    /// [`push()`]: Self::push
+    /// [`append()`]: Self::append
+    /// [`frames()`]: Self::frames
+    /// [`extend_one()`]: Self::extend_one
+    #[must_use]
+    pub fn current_frames(&self) -> &[Frame] {
+        &self.frames
+    }
+
+    /// Pushes a new context to the `Report`.
+    ///
+    /// This function adds a new [`Frame`] to the current frames with the frame from the given
+    /// [`Report`].
+    ///
+    /// [`current_frames()`]: Self::current_frames
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// use std::{fmt, path::Path};
+    ///
+    /// use error_stack::{Report, ResultExt};
+    ///
+    /// #[derive(Debug)]
+    /// struct IoError;
+    ///
+    /// impl fmt::Display for IoError {
+    ///     # fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    ///     #     const _: &str = stringify!(
+    ///             ...
+    ///     #     );
+    ///     #     fmt.write_str("Io Error")
+    ///     # }
+    /// }
+    ///
+    /// # impl core::error::Error for IoError {}
+    ///
+    /// # #[allow(unused_variables)]
+    /// fn read_config(path: impl AsRef<Path>) -> Result<String, Report<IoError>> {
+    ///     # #[cfg(any(miri, not(feature = "std")))]
+    ///     # return Err(error_stack::report!(IoError).attach_printable("Not supported"));
+    ///     # #[cfg(all(not(miri), feature = "std"))]
+    ///     std::fs::read_to_string(path.as_ref())
+    ///         .change_context(IoError)
+    /// }
+    ///
+    /// let mut error1 = read_config("config.txt").unwrap_err().expand();
+    /// let error2 = read_config("config2.txt").unwrap_err();
+    /// let error3 = read_config("config3.txt").unwrap_err();
+    ///
+    /// error1.push(error2);
+    /// error1.push(error3);
+    /// ```
+    pub fn push(&mut self, mut report: Report<C>) {
+        self.frames.append(&mut report.frames);
+    }
+
+    /// Appends the frames from another `Report` to this one.
+    ///
+    /// This method combines the frames of the current `Report` with those of the provided `Report`,
+    /// effectively merging the two error reports.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// use std::{fmt, path::Path};
+    ///
+    /// use error_stack::{Report, ResultExt};
+    ///
+    /// #[derive(Debug)]
+    /// struct IoError;
+    ///
+    /// impl fmt::Display for IoError {
+    ///     # fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    ///     #     const _: &str = stringify!(
+    ///             ...
+    ///     #     );
+    ///     #     fmt.write_str("Io Error")
+    ///     # }
+    /// }
+    ///
+    /// # impl core::error::Error for IoError {}
+    ///
+    /// # #[allow(unused_variables)]
+    /// fn read_config(path: impl AsRef<Path>) -> Result<String, Report<IoError>> {
+    ///     # #[cfg(any(miri, not(feature = "std")))]
+    ///     # return Err(error_stack::report!(IoError).attach_printable("Not supported"));
+    ///     # #[cfg(all(not(miri), feature = "std"))]
+    ///     std::fs::read_to_string(path.as_ref())
+    ///         .change_context(IoError)
+    /// }
+    ///
+    /// let mut error1 = read_config("config.txt").unwrap_err().expand();
+    /// let error2 = read_config("config2.txt").unwrap_err();
+    /// let mut error3 = read_config("config3.txt").unwrap_err().expand();
+    ///
+    /// error1.push(error2);
+    /// error3.append(error1);
+    /// ```
+    pub fn append(&mut self, mut report: Self) {
+        self.frames.append(&mut report.frames);
+    }
+
+    /// Returns an iterator over the current contexts of the `Report`.
+    ///
+    /// This method is similar to [`current_context`], but instead of returning a single context,
+    /// it returns an iterator over all contexts in the `Report`.
+    ///
+    /// The order of the contexts should not be relied upon, as it is not guaranteed to be stable.
     ///
     /// ## Example
     ///
@@ -676,134 +807,93 @@ impl<C> Report<C> {
     ///     # fs::read_to_string(path.as_ref()).map_err(Report::from)
     /// }
     ///
-    /// let report = read_file("test.txt").unwrap_err();
-    /// let io_error = report.current_context();
-    /// assert_eq!(io_error.kind(), io::ErrorKind::NotFound);
+    /// let mut a = read_file("test.txt").unwrap_err().expand();
+    /// let b = read_file("test2.txt").unwrap_err();
+    ///
+    /// a.push(b);
+    ///
+    /// let io_error = a.current_contexts();
+    /// assert_eq!(io_error.count(), 2);
     /// ```
-    #[must_use]
-    pub unsafe fn current_context(&self) -> &C
+    ///
+    /// [`current_context`]: Self::current_context
+    pub fn current_contexts(&self) -> impl Iterator<Item = &C>
     where
         C: Send + Sync + 'static,
     {
-        self.downcast_ref().unwrap_or_else(|| {
-            core::hint::unreachable_unchecked()
-            // // Panics if there isn't an attached context which matches `T`. As it's not possible to
-            // // create a `Report` without a valid context and this method can only be called when `T`
-            // // is a valid context, it's guaranteed that the context is available.
-            // unreachable!(
-            //     "Report does not contain a context. This is considered a bug and should be \
-            //     reported to https://github.com/hashintel/hash/issues/new/choose"
-            // );
-        })
-    }
+        // this needs a manual traveral implementation, why?
+        // We know that each arm has a current context, but we don't know where that context is,
+        // therefore we need to search for it on each branch, but stop once we found it, that way
+        // we're able to return the current context, even if it is "buried" underneath a bunch of
+        // attachments.
+        let mut output = Vec::new();
 
-    /// Converts this `Report` to an [`Error`].
-    #[cfg(any(nightly, feature = "std"))]
-    #[must_use]
-    pub fn into_error(self) -> impl Error + Send + Sync + 'static
-    where
-        C: 'static,
-    {
-        crate::error::ReportError::new(self)
-    }
+        // this implementation does some "weaving" in a sense, it goes L->R for the frames, then
+        // R->L for the sources, which means that some sources might be out of order, but this
+        // simplifies implementation.
+        let mut stack = vec![self.current_frames()];
+        while let Some(frames) = stack.pop() {
+            for frame in frames {
+                // check if the frame is the current context, in that case we don't need to follow
+                // the tree anymore
+                if let Some(context) = frame.downcast_ref::<C>() {
+                    output.push(context);
+                    continue;
+                }
 
-    /// Returns this `Report` as an [`Error`].
-    #[cfg(any(nightly, feature = "std"))]
-    #[must_use]
-    pub fn as_error(&self) -> &(impl Error + Send + Sync + 'static)
-    where
-        C: 'static,
-    {
-        crate::error::ReportError::from_ref(self)
-    }
-
-    /// Converts this `Report` into anonymized Report
-    pub fn as_any(self) -> Report {
-        Report {
-            frames: self.frames,
-            _context: PhantomData,
+                // descend into the tree
+                let sources = frame.sources();
+                match sources {
+                    [] => unreachable!(
+                        "Report does not contain a context. This is considered a bug and should be \
+                        reported to https://github.com/hashintel/hash/issues/new/choose"
+                    ),
+                    sources => {
+                        stack.push(sources);
+                    }
+                }
+            }
         }
+
+        output.into_iter()
     }
 }
 
-impl Report {
-    /// Add a new [`Context`] object to the top of the [`Frame`] stack, really
-    /// changing the type of the `Report`.
-    ///
-    /// It changes from an anonymous [`Report`] type to a [`Report`] with a type.
-    ///
-    /// Please see the [`Context`] documentation for more information.
-    #[track_caller]
-    pub fn transform_context<T>(mut self, context: T) -> Report<T>
-    where
-        T: Context,
-    {
-        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
-        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
-        self.frames.push(Frame::from_attachment(
-            *Location::caller(),
-            context_frame.into_boxed_slice(),
-        ));
-        Report {
-            frames: self.frames,
-            _context: PhantomData,
-        }
-    }
-
-    /// Add a new [`Context`] object to the top of the [`Frame`] stack.
-    ///
-    /// It has the same behavior as [`Report::change_context`] but it does
-    /// not change the type of the `Report`.
-    ///
-    /// Please see the [`Context`] documentation for more information.
-    #[track_caller]
-    pub fn change_context_slient<T>(mut self, context: T) -> Self
-    where
-        T: Context,
-    {
-        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
-        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
-        self.frames.push(Frame::from_attachment(
-            *Location::caller(),
-            context_frame.into_boxed_slice(),
-        ));
-        Self {
-            frames: self.frames,
-            _context: PhantomData,
-        }
-    }
-}
-
-#[cfg(any(nightly, feature = "std"))]
 impl<C: 'static> From<Report<C>> for Box<dyn Error> {
     fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
-#[cfg(any(nightly, feature = "std"))]
 impl<C: 'static> From<Report<C>> for Box<dyn Error + Send> {
     fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
-#[cfg(any(nightly, feature = "std"))]
 impl<C: 'static> From<Report<C>> for Box<dyn Error + Sync> {
     fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
-#[cfg(any(nightly, feature = "std"))]
 impl<C: 'static> From<Report<C>> for Box<dyn Error + Send + Sync> {
     fn from(report: Report<C>) -> Self {
         Box::new(report.into_error())
     }
 }
 
+impl<C> From<Report<C>> for Report<[C]> {
+    fn from(report: Report<C>) -> Self {
+        Self {
+            frames: report.frames,
+            _context: PhantomData,
+        }
+    }
+}
+
 #[cfg(feature = "std")]
-impl<Context> std::process::Termination for Report<Context> {
+impl<C> std::process::Termination for Report<C> {
     fn report(self) -> ExitCode {
         #[cfg(not(nightly))]
         return ExitCode::FAILURE;
@@ -816,23 +906,44 @@ impl<Context> std::process::Termination for Report<Context> {
     }
 }
 
-impl<Context> FromIterator<Report<Context>> for Option<Report<Context>> {
-    fn from_iter<T: IntoIterator<Item = Report<Context>>>(iter: T) -> Self {
+impl<C> FromIterator<Report<C>> for Option<Report<[C]>> {
+    fn from_iter<T: IntoIterator<Item = Report<C>>>(iter: T) -> Self {
         let mut iter = iter.into_iter();
 
-        let mut base = iter.next()?;
+        let mut base = iter.next()?.expand();
         for rest in iter {
-            base.extend_one(rest);
+            base.push(rest);
         }
 
         Some(base)
     }
 }
 
-impl<Context> Extend<Self> for Report<Context> {
-    fn extend<T: IntoIterator<Item = Self>>(&mut self, iter: T) {
+impl<C> FromIterator<Report<[C]>> for Option<Report<[C]>> {
+    fn from_iter<T: IntoIterator<Item = Report<[C]>>>(iter: T) -> Self {
+        let mut iter = iter.into_iter();
+
+        let mut base = iter.next()?;
+        for mut rest in iter {
+            base.frames.append(&mut rest.frames);
+        }
+
+        Some(base)
+    }
+}
+
+impl<C> Extend<Report<C>> for Report<[C]> {
+    fn extend<T: IntoIterator<Item = Report<C>>>(&mut self, iter: T) {
         for item in iter {
-            self.extend_one(item);
+            self.push(item);
+        }
+    }
+}
+
+impl<C> Extend<Self> for Report<[C]> {
+    fn extend<T: IntoIterator<Item = Self>>(&mut self, iter: T) {
+        for mut item in iter {
+            self.frames.append(&mut item.frames);
         }
     }
 }

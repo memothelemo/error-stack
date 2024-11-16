@@ -1,8 +1,7 @@
-#![cfg_attr(nightly, feature(error_in_core, error_generic_member_access))]
+#![cfg_attr(nightly, feature(error_generic_member_access))]
 
 mod common;
 
-#[allow(clippy::wildcard_imports)]
 use common::*;
 use error_stack::{bail, ensure, report};
 
@@ -12,9 +11,7 @@ fn report() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(!report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(2));
     assert_eq!(
         remove_builtin_messages(messages(&report)),
@@ -25,9 +22,7 @@ fn report() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(3));
     assert_eq!(
         remove_builtin_messages(messages(&report)),
@@ -41,9 +36,7 @@ fn bail() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(!report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(2));
     assert_eq!(
         remove_builtin_messages(messages(&report)),
@@ -54,9 +47,7 @@ fn bail() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(3));
     assert_eq!(
         remove_builtin_messages(messages(&report)),
@@ -78,9 +69,7 @@ fn ensure() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(!report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(2));
     assert_eq!(
         remove_builtin_messages(messages(&report)),
@@ -95,9 +84,7 @@ fn ensure() {
     assert!(report.contains::<RootError>());
     assert!(report.contains::<PrintableA>());
     assert!(report.contains::<PrintableB>());
-    unsafe {
-        assert_eq!(report.current_context(), &RootError);
-    }
+    assert_eq!(report.current_context(), &RootError);
     assert_eq!(report.frames().count(), expect_count(3));
     assert_eq!(
         remove_builtin_messages(messages(&report)),

@@ -1,6 +1,4 @@
-#[cfg_attr(feature = "std", allow(unused_imports))]
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::{boxed::Box, collections::BTreeMap};
 use core::any::{Any, TypeId};
 
 pub(crate) type Storage = BTreeMap<TypeId, BTreeMap<TypeId, Box<dyn Any>>>;
@@ -168,7 +166,7 @@ impl<T> HookContext<T> {
     pub fn cast<U>(&mut self) -> &mut HookContext<U> {
         // SAFETY: `HookContext` is marked as repr(transparent) and the changed generic is only used
         // inside of the `PhantomData`
-        unsafe { &mut *(self as *mut Self).cast::<HookContext<U>>() }
+        unsafe { &mut *core::ptr::from_mut(self).cast::<HookContext<U>>() }
     }
 }
 
@@ -279,8 +277,6 @@ impl<T: 'static> HookContext<T> {
     pub fn increment_counter(&mut self) -> isize {
         let counter = self.get_mut::<$crate::hook::context::Counter>();
 
-        // reason: This would fail as we cannot move out of `self` because it is borrowed
-        #[allow(clippy::option_if_let_else)]
         match counter {
             None => {
                 // if the counter hasn't been set yet, default to `0`
@@ -344,8 +340,6 @@ impl<T: 'static> HookContext<T> {
     pub fn decrement_counter(&mut self) -> isize {
         let counter = self.get_mut::<$crate::hook::context::Counter>();
 
-        // reason: This would fail as we cannot move out of `self` because it is borrowed
-        #[allow(clippy::option_if_let_else)]
         match counter {
             None => {
                 // given that increment starts with `0` (which is therefore the implicit default

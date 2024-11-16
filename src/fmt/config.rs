@@ -3,7 +3,7 @@ use crate::fmt::{Charset, ColorMode};
 use crate::fmt::{Format, HookContext};
 
 #[cfg(any(feature = "std", feature = "hooks"))]
-pub struct Config {
+pub(crate) struct Config {
     context: HookContext<()>,
 }
 
@@ -15,14 +15,14 @@ impl Config {
         Self { context }
     }
 
-    pub fn load(alternate: bool) -> Self {
+    pub(crate) fn load(alternate: bool) -> Self {
         let color_mode = ColorMode::load();
         let charset = Charset::load();
 
         Self::new(color_mode, charset, alternate)
     }
 
-    pub fn context<T>(&mut self) -> &mut HookContext<T> {
+    pub(crate) fn context<T>(&mut self) -> &mut HookContext<T> {
         self.context.cast()
     }
 
@@ -36,7 +36,7 @@ impl Config {
 }
 
 #[cfg(not(any(feature = "std", feature = "hooks")))]
-pub struct Config {
+pub(crate) struct Config {
     color_mode: ColorMode,
     charset: Charset,
 }

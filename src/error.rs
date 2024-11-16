@@ -1,8 +1,6 @@
 #[cfg(nightly)]
-use core::error::{Error, Request};
-use core::fmt;
-#[cfg(not(nightly))]
-use std::error::Error;
+use core::error::Request;
+use core::{error::Error, fmt, ptr};
 
 use crate::Report;
 
@@ -16,7 +14,7 @@ impl<C> ReportError<C> {
 
     pub(crate) const fn from_ref(report: &Report<C>) -> &Self {
         // SAFETY: `ReportError` is a `repr(transparent)` wrapper around `Report`.
-        unsafe { &*(report as *const Report<C>).cast() }
+        unsafe { &*ptr::from_ref(report).cast() }
     }
 }
 
