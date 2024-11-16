@@ -8,7 +8,7 @@ use core::{any::TypeId, mem};
 
 pub(crate) use default::install_builtin_hooks;
 
-use crate::fmt::{ColorMode, Frame, charset::Charset};
+use crate::fmt::{charset::Charset, ColorMode, Frame};
 
 pub(crate) struct Format {
     alternate: bool,
@@ -37,7 +37,8 @@ impl Format {
         &self.appendix
     }
 
-    fn take_body(&mut self) -> Vec<String> {
+    #[allow(unreachable_pub)]
+    pub fn take_body(&mut self) -> Vec<String> {
         mem::take(&mut self.body)
     }
 }
@@ -421,7 +422,7 @@ fn into_boxed_hook<T: Send + Sync + 'static>(
 /// [`Debug`]: core::fmt::Debug
 /// [`.insert()`]: Hooks::insert
 #[expect(clippy::field_scoped_visibility_modifiers)]
-pub(crate) struct Hooks {
+pub struct Hooks {
     // We use `Vec`, instead of `HashMap` or `BTreeMap`, so that ordering is consistent with the
     // insertion order of types.
     pub(crate) inner: Vec<(TypeId, BoxedHook)>,
@@ -440,7 +441,7 @@ impl Hooks {
         self.inner.push((type_id, into_boxed_hook(hook)));
     }
 
-    pub(crate) fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
+    pub fn call(&self, frame: &Frame, context: &mut HookContext<Frame>) -> bool {
         let mut hit = false;
 
         for (_, hook) in &self.inner {
@@ -470,8 +471,8 @@ mod default {
     use tracing_error::SpanTrace;
 
     use crate::{
-        Report,
         fmt::{hook::HookContext, location::LocationAttachment},
+        Report,
     };
 
     pub(crate) fn install_builtin_hooks() {

@@ -243,7 +243,7 @@ use crate::{
 /// ```
 #[must_use]
 #[expect(clippy::field_scoped_visibility_modifiers)]
-pub struct Report<C: ?Sized> {
+pub struct Report<C: ?Sized = ()> {
     // The vector is boxed as this implies a memory footprint equal to a single pointer size
     // instead of three pointer sizes. Even for small `Result::Ok` variants, the `Result` would
     // still have at least the size of `Report`, even at the happy path. It's unexpected, that
@@ -418,6 +418,10 @@ impl<C> Report<C> {
     /// This is one disadvantage of the library in comparison to plain Errors, as in these cases,
     /// all context types are known.
     ///
+    /// ## Panics
+    /// This function will panic if the context is not explicitly typed in
+    /// the [`Report`] object. (i.e. `Report<T>` without the T generic)
+    ///
     /// ## Example
     ///
     /// ```rust
@@ -441,6 +445,15 @@ impl<C> Report<C> {
     where
         C: Send + Sync + 'static,
     {
+        // We must not use this function if context is `()` in any circumstances
+        let context_type = core::any::TypeId::of::<C>();
+        let tuple_type_id = core::any::TypeId::of::<()>();
+        if context_type == tuple_type_id {
+            unreachable!(
+                "current_context() must not be used with Report does not contain a context."
+            );
+        }
+
         self.downcast_ref().unwrap_or_else(|| {
             // Panics if there isn't an attached context which matches `T`. As it's not possible to
             // create a `Report` without a valid context and this method can only be called when `T`
@@ -664,6 +677,70 @@ impl<C: ?Sized> Report<C> {
     #[must_use]
     pub fn downcast_mut<T: Send + Sync + 'static>(&mut self) -> Option<&mut T> {
         self.frames_mut().find_map(Frame::downcast_mut::<T>)
+    }
+
+    /// Converts a `Report` with context into `Report` with no context.
+    /// (i.e. `Report<T> -> Report`)
+    #[inline(always)]
+    #[deprecated(note = "Use `Report::erase_context` instead", since = "0.6.0")]
+    #[must_use]
+    pub fn as_any(self) -> Report {
+        self.erase_context()
+    }
+
+    /// Converts a `Report` with context into `Report` with no context.
+    /// (i.e. `Report<T> -> Report`)
+    #[must_use]
+    pub fn erase_context(self) -> Report {
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+}
+
+// For `Report`'s with no context.
+impl Report {
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack, really
+    /// changing the type of the `Report`.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[track_caller]
+    pub fn transform_context<T>(mut self, context: T) -> Report<T>
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
+        self.frames.push(Frame::from_attachment(
+            *Location::caller(),
+            context_frame.into_boxed_slice(),
+        ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
+    }
+
+    /// Add a new [`Context`] object to the top of the [`Frame`] stack but it
+    /// does not change the type of the `Report`.
+    ///
+    /// Please see the [`Context`] documentation for more information.
+    #[track_caller]
+    pub fn change_context_slient<T>(mut self, context: T) -> Report
+    where
+        T: Context,
+    {
+        let old_frames = mem::replace(self.frames.as_mut(), Vec::with_capacity(1));
+        let context_frame = vec![Frame::from_context(context, old_frames.into_boxed_slice())];
+        self.frames.push(Frame::from_attachment(
+            *Location::caller(),
+            context_frame.into_boxed_slice(),
+        ));
+        Report {
+            frames: self.frames,
+            _context: PhantomData,
+        }
     }
 }
 

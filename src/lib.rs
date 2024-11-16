@@ -535,7 +535,13 @@ pub use self::{
     report::Report,
 };
 #[doc(inline)]
-pub use self::{future::FutureExt, result::ResultExt};
+pub use self::{
+    future::FutureExt,
+    result::{NoContextResultExt, ResultExt},
+};
+
+#[deprecated(note = "Use `NoContextResultExt` instead", since = "0.6.0")]
+pub use self::result::NoContextResultExt as AnyResultExt;
 
 #[cfg(test)]
 #[expect(dead_code)]

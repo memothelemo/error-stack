@@ -3,8 +3,8 @@ pub(crate) mod context;
 use alloc::vec::Vec;
 
 use crate::{
+    fmt::{install_builtin_hooks, Hooks},
     Report,
-    fmt::{Hooks, install_builtin_hooks},
 };
 
 #[cfg(feature = "std")]
@@ -217,7 +217,7 @@ impl Report<()> {
     ///
     /// [`install_debug_hook`]: Self::install_debug_hook
     #[cfg(any(feature = "std", feature = "hooks"))]
-    pub(crate) fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
+    pub fn invoke_debug_format_hook<T>(closure: impl FnOnce(&Hooks) -> T) -> T {
         install_builtin_hooks();
 
         // TODO: Use `let ... else` when MSRV is 1.65
