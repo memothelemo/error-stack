@@ -514,7 +514,7 @@ pub mod fmt;
 #[cfg(any(feature = "std", feature = "hooks"))]
 mod hook;
 #[cfg(feature = "serde")]
-mod serde;
+pub mod serde;
 #[cfg(feature = "unstable")]
 mod sink;
 
