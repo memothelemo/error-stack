@@ -1,7 +1,13 @@
+[workspace]
+members = [".", "macros"]
+
+[workspace.package]
+authors       = ["HASH", "memothelemo <dev@memothelemo.xyz>"]
+
 [package]
 name          = "error-stack"
 version       = "0.6.0-memothelemo.0"
-authors       = ["HASH", "memothelemo <dev@memothelemo.xyz>"]
+authors       = { workspace = true }
 edition       = "2021"
 rust-version  = "1.83.0"
 license       = "MIT OR Apache-2.0"
@@ -68,9 +74,6 @@ eyre   = ["dep:eyre", "std"] # Provides `into_report` to convert `eyre::Report` 
 futures = ["dep:futures-core", "dep:pin-project-lite"] # Provides support for `futures` types, such as stream.
 
 unstable = [] # Enables unstable features that are not covered under any stability guarantees
-
-[lints]
-workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
